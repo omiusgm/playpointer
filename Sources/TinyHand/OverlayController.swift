@@ -11,6 +11,9 @@ final class OverlayController {
     private let armView: ArmView
     private let inputTap = InputTap()
     private let tapSound = TapSound()
+    private(set) var mode = Preferences.pointerMode
+    private var controlMonitors: [Any] = []
+    private var drawModeButtons: Set<Int64> = []
     private var interactHeld = false
     private var menuHover = false
     private var guardCursorUntil = Date.distantPast
@@ -18,7 +21,6 @@ final class OverlayController {
     private var currentFrame: CGRect?
     private var downPoint: CGPoint?
     private var buttonSeenDown = false
-    private var dragEvents = 0
 
     private let toolbar = Toolbar()
     private var revealUntil = Date.distantPast
@@ -28,7 +30,6 @@ final class OverlayController {
     private var lastMenuScan = Date.distantPast
     private var menuOpeningUntil = Date.distantPast
     private var escHotKey: UInt32?
-    private var lastPermissionCheck = Date.distantPast
 
     private static let busyInterval: TimeInterval = 1.0 / 120.0
     private static let idleInterval: TimeInterval = 1.0 / 20.0
@@ -62,48 +63,40 @@ final class OverlayController {
         armView = ArmView(frame: NSRect(origin: .zero, size: frame.size))
         window.contentView = armView
 
-        inputTap.onMouseDown = { [weak self] in
+        inputTap.onMouseDown = { [weak self] button, feedback in
             guard let self = self else {
                 return
             }
+            self.drawModeButtons.insert(button)
             self.armView.press()
             self.armView.held = true
-            self.tapSound.play()
-            self.toolbar.hideHint()
-            self.downPoint = self.localMouse()
-            self.dragEvents = 0
-            Log.write("press at \(self.downPoint.map { "\(Int($0.x)),\(Int($0.y))" } ?? "?")")
+            if feedback == .draw {
+                self.tapSound.play()
+                self.toolbar.hideHint()
+                if button == 0 {
+                    self.downPoint = self.localMouse()
+                }
+            }
             self.noteButtonEvent()
         }
         inputTap.onLeftDragged = { [weak self] in
-            self?.dragEvents += 1
             self?.drag()
             self?.wake()
         }
-        inputTap.onMouseUp = { [weak self] in
-            self?.release()
-            self?.noteButtonEvent()
-        }
-        inputTap.onInteractDown = { [weak self] in
-            self?.armView.press()
-            self?.armView.held = true
-            self?.noteButtonEvent()
-        }
-        inputTap.onInteractUp = { [weak self] in
-            self?.armView.held = false
-            self?.guardCursorUntil = Date().addingTimeInterval(2)
-            CursorHider.reassert(urgent: true)
-            self?.noteButtonEvent()
+        inputTap.onMouseUp = { [weak self] button, feedback in
+            guard let self = self else { return }
+            self.drawModeButtons.remove(button)
+            self.armView.held = !self.drawModeButtons.isEmpty
+            if feedback == .draw && button == 0 {
+                self.endStroke()
+            } else if feedback == .interact {
+                self.guardCursorUntil = Date().addingTimeInterval(2)
+                CursorHider.reassert(urgent: true)
+            }
+            self.noteButtonEvent()
         }
         inputTap.onPassThroughPress = { [weak self] location in
-            guard let screen = self?.currentScreen() else {
-                return
-            }
-            let bar = OverlayController.cgRect(OverlayController.menuBarRect(screen))
-            if bar.contains(location) {
-                self?.menuOpeningUntil = Date().addingTimeInterval(1)
-            }
-            self?.noteButtonEvent()
+            self?.notePassThroughPress(at: location)
         }
 
         toolbar.onPick = { [weak self] style in
@@ -112,18 +105,17 @@ final class OverlayController {
         toolbar.onToggleSound = { [weak self] in
             self?.soundOn.toggle()
         }
+        toolbar.onSelectMode = { [weak self] in self?.requestMode($0) }
         toolbar.onExit = { [weak self] in
             self?.exit()
         }
-        toolbar.onFixPermission = { [weak self] in
-            self?.exit()
-            self?.onNeedsPermission?()
-        }
         toolbar.select(armView.style)
+        toolbar.selectMode(mode)
         tapSound.enabled = soundOn
         toolbar.setSoundOn(soundOn)
         NotificationCenter.default.addObserver(forName: Preferences.changed, object: nil, queue: .main) { [weak self] _ in
             self?.syncSound()
+            self?.syncMode()
             self?.inputTap.interactKey = Preferences.interactKey.cgFlags
             self?.armView.updateInkColor()
             self?.tapSound.load(Preferences.tapSound)
@@ -158,14 +150,50 @@ final class OverlayController {
         onSoundChanged?()
     }
 
+    @discardableResult
+    func setMode(_ requested: PointerMode) -> Bool {
+        guard requested != .draw || (AXIsProcessTrusted() && inputTap.install()) else {
+            toolbar.selectMode(mode)
+            return false
+        }
+        if Preferences.pointerMode != requested {
+            Preferences.pointerMode = requested
+        }
+        return true
+    }
+
+    func requestMode(_ requested: PointerMode) {
+        if !setMode(requested) {
+            onNeedsPermission?()
+        }
+    }
+
+    private func syncMode() {
+        let selected = Preferences.pointerMode
+        guard mode != selected else { return }
+        mode = selected
+        release()
+        toolbar.selectMode(selected)
+        toolbar.hideHint()
+        if isActive {
+            if selected == .control {
+                window.ignoresMouseEvents = true
+                syncInput()
+            }
+            tick()
+            if selected == .draw { syncInput() }
+        }
+    }
+
     var extraPassThrough: (() -> [CGRect])?
 
     func suspendInput(_ suspended: Bool) {
-        guard isActive, inputTap.isInstalled else {
+        guard isActive else {
             return
         }
         ownMenuOpen = suspended
-        inputTap.setActive(!suspended)
+        if suspended { release() }
+        syncInput()
         if let screen = currentScreen() {
             updateZones(mouse: NSEvent.mouseLocation, screen: screen)
         }
@@ -177,12 +205,13 @@ final class OverlayController {
     }
 
     private func release() {
-        if let start = downPoint {
-            let moved = localMouse().map { Int(hypot($0.x - start.x, $0.y - start.y)) } ?? -1
-            Log.write("release, drag events=\(dragEvents) moved=\(moved)pt stroke drawn=\(armView.ink.isDrawing)")
-        }
-        buttonSeenDown = false
+        drawModeButtons.removeAll()
         armView.held = false
+        endStroke()
+    }
+
+    private func endStroke() {
+        buttonSeenDown = false
         downPoint = nil
         armView.ink.end()
     }
@@ -197,6 +226,10 @@ final class OverlayController {
 
     func toolbarButtonCenter(_ style: PointerStyle) -> CGPoint? {
         toolbar.center(of: style)
+    }
+
+    func toolbarModeCenter(_ mode: PointerMode) -> CGPoint? {
+        toolbar.center(of: mode)
     }
 
     var inkStrokes: Int { armView.ink.layer.sublayers?.count ?? 0 }
@@ -244,41 +277,34 @@ final class OverlayController {
     @discardableResult
     func activate() -> Bool {
         guard !isActive else {
-            return inputTap.isInstalled
+            return true
         }
-        guard AXIsProcessTrusted() else {
-            Log.write("activate skipped: not trusted")
-            onNeedsPermission?()
-            return false
+        if mode == .draw && !setMode(.draw) {
+            setMode(.control)
         }
         isActive = true
         currentFrame = nil
         tapSound.warm()
+        inputTap.interactKey = Preferences.interactKey.cgFlags
 
         CursorHider.hide()
+        revealUntil = Date().addingTimeInterval(3)
         tick()
         window.orderFrontRegardless()
+        toolbar.show()
+        syncInput()
 
         stillSince = Date()
         runTimer(every: OverlayController.busyInterval)
 
         activity = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated, .latencyCritical], reason: "TinyHand pointer is on")
-        let installed = inputTap.install()
-        inputTap.interactKey = Preferences.interactKey.cgFlags
-        inputTap.setActive(installed)
-        Log.write("activate trusted=\(AXIsProcessTrusted()) tapInstalled=\(installed)")
-
-        if let screen = currentScreen() {
-            toolbar.place(on: screen)
-        }
-        toolbar.setNeedsPermission(!installed)
-        toolbar.show()
-        revealUntil = Date().addingTimeInterval(3)
-        if installed && !UserDefaults.standard.bool(forKey: OverlayController.hintShownKey) {
+            options: [.userInitiated, .latencyCritical], reason: "PlayPointer pointer is on")
+        if !UserDefaults.standard.bool(forKey: OverlayController.hintShownKey) {
             UserDefaults.standard.set(true, forKey: OverlayController.hintShownKey)
-            var parts: [(key: String, text: String)] = [("Click", "to tap"), ("Drag", "to draw")]
-            if Preferences.interactKey != .off {
+            var parts: [(key: String, text: String)] = mode == .control
+                ? [("Control", "to use apps"), ("Draw", "to annotate")]
+                : [("Click", "to tap"), ("Drag", "to draw")]
+            if mode == .draw && Preferences.interactKey != .off {
                 parts.append(("Hold \(Preferences.interactKey.symbol)", "to click for real"))
             }
             parts.append(("Esc", "to exit"))
@@ -288,9 +314,8 @@ final class OverlayController {
                 self?.toolbar.hideHint()
             }
         }
-        setEscEnabled(true)
         onActiveChanged?()
-        return installed
+        return true
     }
 
     func deactivate() {
@@ -303,13 +328,12 @@ final class OverlayController {
         timer = nil
         timerInterval = 0
         removeIdleMonitors()
-        inputTap.setActive(false)
+        syncInput()
         if let a = activity {
             ProcessInfo.processInfo.endActivity(a)
             activity = nil
         }
-        armView.held = false
-        downPoint = nil
+        release()
         armView.ink.clear()
         window.ignoresMouseEvents = true
         window.orderOut(nil)
@@ -326,9 +350,8 @@ final class OverlayController {
     private func updateZones(mouse: CGPoint, screen: NSScreen) {
         let f = toolbar.frame
         let near = f.insetBy(dx: -80, dy: 0).union(f.offsetBy(dx: 0, dy: 90)).insetBy(dx: 0, dy: -10).contains(mouse)
-        let needsPermission = !inputTap.isInstalled
         let drawing = armView.ink.isDrawing
-        toolbar.setRevealed(!drawing && (near || Date() < revealUntil || needsPermission))
+        toolbar.setRevealed(!drawing && (near || Date() < revealUntil))
 
         let menuLikely = !menuRects.isEmpty || ownMenuOpen || Date() < menuOpeningUntil
             || Date().timeIntervalSince(lastButtonEvent) < 2
@@ -343,16 +366,14 @@ final class OverlayController {
         let overMenu = menuBar.contains(mouse) || menuRects.contains { $0.contains(cgMouse) }
             || Date() < menuOpeningUntil
         let key = Preferences.interactKey.cgFlags
-        let interacting = (!key.isEmpty && CGEventSource.flagsState(.hidSystemState).contains(key)) || inputTap.interactPressing
+        let interacting = mode == .draw && ((!key.isEmpty && CGEventSource.flagsState(.hidSystemState).contains(key))
+            || inputTap.interactPressing)
         interactHeld = interacting
         menuHover = overMenu
         let normal = !drawing && !Preferences.interactKeepsHand && (interacting || overMenu || ownMenuOpen)
         setEscEnabled(menuRects.isEmpty && !ownMenuOpen)
 
         if normal != normalCursor {
-            let at = "at \(Int(mouse.x)),\(Int(mouse.y))"
-            let why = interacting ? "interact key" : menuBar.contains(mouse) ? "menu bar" : "menu"
-            Log.write(normal ? "real cursor (\(why)) \(at)" : "pointer back \(at)")
             normalCursor = normal
             armView.pointerHidden = normal
             if normal {
@@ -409,22 +430,49 @@ final class OverlayController {
         return CGPoint(x: p.x, y: primaryH - p.y)
     }
 
-    private func checkPermission() {
-        guard !inputTap.isInstalled, Date().timeIntervalSince(lastPermissionCheck) > 1 else {
-            return
-        }
-        lastPermissionCheck = Date()
-        guard AXIsProcessTrusted(), inputTap.install() else {
-            return
-        }
-        Log.write("permission granted while running; tap installed")
-        inputTap.setActive(true)
-        toolbar.setNeedsPermission(false)
-    }
-
     private static func cgRect(_ r: CGRect) -> CGRect {
         let primaryH = NSScreen.screens.first?.frame.height ?? 0
         return CGRect(x: r.minX, y: primaryH - r.maxY, width: r.width, height: r.height)
+    }
+
+    private func syncInput() {
+        let acceptsInput = isActive && !ownMenuOpen
+        inputTap.setActive(acceptsInput && mode == .draw)
+        guard acceptsInput && mode == .control else {
+            controlMonitors.forEach(NSEvent.removeMonitor)
+            controlMonitors.removeAll()
+            return
+        }
+        guard controlMonitors.isEmpty else { return }
+
+        let presses: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: presses, handler: { [weak self] event in
+            self?.showControlClick(event)
+        }) {
+            controlMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: presses, handler: { [weak self] event in
+            self?.showControlClick(event)
+            return event
+        }) {
+            controlMonitors.append(local)
+        }
+    }
+
+    private func notePassThroughPress(at location: CGPoint) {
+        if let screen = currentScreen(), OverlayController.cgRect(OverlayController.menuBarRect(screen)).contains(location) {
+            menuOpeningUntil = Date().addingTimeInterval(1)
+        }
+        noteButtonEvent()
+    }
+
+    private func showControlClick(_ event: NSEvent) {
+        guard isActive, mode == .control, !ownMenuOpen else { return }
+        let location = event.cgEvent?.location ?? OverlayController.cgPoint(NSEvent.mouseLocation)
+        notePassThroughPress(at: location)
+        if toolbar.revealed && OverlayController.cgRect(toolbar.frame).contains(location) { return }
+        armView.press()
+        tapSound.play()
     }
 
     func runClickTest() {
@@ -436,23 +484,29 @@ final class OverlayController {
         func spin(_ seconds: Double) {
             RunLoop.main.run(until: Date().addingTimeInterval(seconds))
         }
+        func simulate(_ type: CGEventType) {
+            if let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: .zero, mouseButton: .left) {
+                _ = inputTap.handle(type: type, event: event)
+            }
+        }
+        inputTap.setActive(true)
         tick()
         time("tick") { tick() }
-        time("mouseDown (tap callback)") { inputTap.simulate(.leftMouseDown) }
+        time("mouseDown (tap callback)") { simulate(.leftMouseDown) }
         time("mouseDown (deferred work)") { spin(0.01) }
         time("10 ticks while held") { for _ in 0..<10 { tick() } }
-        time("mouseUp (tap callback)") { inputTap.simulate(.leftMouseUp) }
+        time("mouseUp (tap callback)") { simulate(.leftMouseUp) }
         spin(0.01)
         spin(0.3)
         time("second click (tap callbacks)") {
-            inputTap.simulate(.leftMouseDown)
-            inputTap.simulate(.leftMouseUp)
+            simulate(.leftMouseDown)
+            simulate(.leftMouseUp)
         }
         spin(0.05)
         time("drag x50 (tap callbacks)") {
-            inputTap.simulate(.leftMouseDown)
-            for _ in 0..<50 { inputTap.simulate(.leftMouseDragged) }
-            inputTap.simulate(.leftMouseUp)
+            simulate(.leftMouseDown)
+            for _ in 0..<50 { simulate(.leftMouseDragged) }
+            simulate(.leftMouseUp)
         }
         spin(0.05)
         time("ticks after up") { for _ in 0..<20 { tick() } }
@@ -560,8 +614,8 @@ final class OverlayController {
         }
 
         updateZones(mouse: mouse, screen: screen)
-        let overDock = DockArea.contains(OverlayController.cgPoint(mouse))
-        let catchMouse = overDock && inputTap.isInstalled && !normalCursor && !interactHeld
+        let overDock = isActive && mode == .draw && DockArea.contains(OverlayController.cgPoint(mouse))
+        let catchMouse = overDock && inputTap.isInstalled && !normalCursor && !interactHeld && !ownMenuOpen
         if window.ignoresMouseEvents == catchMouse {
             window.ignoresMouseEvents = !catchMouse
         }
@@ -569,9 +623,10 @@ final class OverlayController {
         if !normalCursor {
             CursorHider.reassert(fighting: overDock, urgent: urgent)
         }
-        checkPermission()
-
         let local = CGPoint(x: mouse.x - screen.frame.origin.x, y: mouse.y - screen.frame.origin.y)
+        if isActive && mode == .control && !ownMenuOpen {
+            armView.held = NSEvent.pressedMouseButtons != 0
+        }
         armView.aim(cursor: local)
         guard downPoint != nil else {
             let busy = overDock || (!normalCursor && urgent) || CursorHider.isSettling
@@ -583,7 +638,9 @@ final class OverlayController {
             buttonSeenDown = true
         }
         if buttonSeenDown && !down {
-            release()
+            drawModeButtons.remove(0)
+            armView.held = !drawModeButtons.isEmpty
+            endStroke()
             return
         }
         drag()

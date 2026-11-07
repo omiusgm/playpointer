@@ -14,6 +14,9 @@ struct PointerStyle: Hashable {
         self.rawValue = rawValue
     }
 
+    static let squeaky = PointerStyle("squeaky")
+    static let rocket = PointerStyle("rocket")
+    static let paw = PointerStyle("paw")
     static let lavender = PointerStyle("lavender")
     static let glove = PointerStyle("glove")
     static let coral = PointerStyle("coral")
@@ -22,6 +25,9 @@ struct PointerStyle: Hashable {
     static let laser = PointerStyle("laser")
 
     private static let builtIn: [(id: String, title: String, ink: CGColor)] = [
+        ("squeaky", "Squeaky toy", Ink.hex(0xE67F98)),
+        ("rocket", "Pocket rocket", Ink.hex(0x3284B4)),
+        ("paw", "Paw", Ink.hex(0xD78461)),
         ("lavender", "Lavender toy", Ink.purple),
         ("glove", "Cursor glove", Ink.purple),
         ("coral", "Coral vinyl", Ink.red),
@@ -72,7 +78,7 @@ struct PointerStyle: Hashable {
         builtInHands + customHands + [.laser]
     }
 
-    static let defaultPinned: [PointerStyle] = [.lavender, .glove, .coral, .plush, .robot, .laser]
+    static let defaultPinned: [PointerStyle] = [.squeaky, .rocket, .paw, .lavender, .glove, .laser]
 
     var isCustom: Bool {
         CustomHands.hand(rawValue) != nil
@@ -95,6 +101,8 @@ struct PointerStyle: Hashable {
         if isCustom {
             return rawValue
         }
+        if rawValue == "rocket" { return "hand_rocket_3d" }
+        if rawValue == "paw" { return "hand_paw_3d_v3" }
         return "hand_\(rawValue)"
     }
 

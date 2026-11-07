@@ -2,9 +2,9 @@ import AppKit
 
 final class Toolbar {
     var onPick: ((PointerStyle) -> Void)?
+    var onSelectMode: ((PointerMode) -> Void)?
     var onToggleSound: (() -> Void)?
     var onExit: (() -> Void)?
-    var onFixPermission: (() -> Void)?
 
     private final class Panel: NSPanel {
         override var canBecomeKey: Bool { false }
@@ -15,15 +15,19 @@ final class Toolbar {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
+    private final class ModeControl: NSSegmentedControl {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
     private let panel: Panel
     private let stack = NSStackView()
+    private let modes = ModeControl()
     private var styleButtons: [PointerStyle: Button] = [:]
     private var shownStyles: [PointerStyle] = []
     private var current: PointerStyle?
     private var inkButton: Button?
     private var swatches: [InkChoice: Button] = [:]
     private var inkOpen = false
-    private let permissionButton = Button()
     private var soundButton: Button?
     private(set) var revealed = false
 
@@ -87,6 +91,19 @@ final class Toolbar {
         ])
 
         stack.addArrangedSubview(Toolbar.divider())
+        modes.segmentCount = PointerMode.allCases.count
+        modes.trackingMode = .selectOne
+        modes.segmentStyle = .rounded
+        modes.setAccessibilityLabel("Pointer mode")
+        for (index, mode) in PointerMode.allCases.enumerated() {
+            modes.setLabel(mode.title, forSegment: index)
+            modes.setWidth(58, forSegment: index)
+            modes.setToolTip(mode == .control ? "Click and drag in apps" : "Draw on the screen", forSegment: index)
+        }
+        modes.target = self
+        modes.action = #selector(changeMode(_:))
+        selectMode(Preferences.pointerMode)
+        stack.addArrangedSubview(modes)
         let ink = makeButton(image: nil, tip: "Ink colour") { [weak self] in
             self?.toggleInk()
         }
@@ -100,25 +117,6 @@ final class Toolbar {
         stack.addArrangedSubview(makeButton(symbol: "xmark", tip: "Exit  (Esc)") { [weak self] in
             self?.onExit?()
         })
-
-        permissionButton.bezelStyle = .rounded
-        permissionButton.isBordered = false
-        permissionButton.wantsLayer = true
-        permissionButton.layer?.cornerRadius = 10
-        permissionButton.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.9).cgColor
-        permissionButton.attributedTitle = NSAttributedString(string: "  Allow clicks & drawing  ", attributes: [
-            .foregroundColor: NSColor.black,
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-        ])
-        permissionButton.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-        permissionButton.imagePosition = .imageLeading
-        permissionButton.contentTintColor = .black
-        permissionButton.toolTip = "TinyHand needs Accessibility permission to intercept clicks and draw"
-        permissionButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        permissionButton.target = self
-        permissionButton.action = #selector(fixPermission)
-        permissionButton.isHidden = true
-        stack.addArrangedSubview(permissionButton)
 
         rebuildStyles()
         background.removeFocusRings()
@@ -249,6 +247,13 @@ final class Toolbar {
         return CGPoint(x: r.midX, y: r.midY)
     }
 
+    func center(of mode: PointerMode) -> CGPoint? {
+        guard let window = modes.window, let index = PointerMode.allCases.firstIndex(of: mode) else { return nil }
+        let r = window.convertToScreen(modes.convert(modes.bounds, to: nil))
+        let segmentWidth = r.width / CGFloat(modes.segmentCount)
+        return CGPoint(x: r.minX + (CGFloat(index) + 0.5) * segmentWidth, y: r.midY)
+    }
+
     func snapshot() -> NSBitmapImageRep? {
         guard let view = panel.contentView else {
             return nil
@@ -363,14 +368,10 @@ final class Toolbar {
         }
     }
 
-    func setNeedsPermission(_ needed: Bool) {
-        guard permissionButton.isHidden == needed else {
-            return
+    func selectMode(_ mode: PointerMode) {
+        if let index = PointerMode.allCases.firstIndex(of: mode) {
+            modes.selectedSegment = index
         }
-        permissionButton.isHidden = !needed
-        let center = CGPoint(x: panel.frame.midX, y: panel.frame.minY)
-        resize()
-        panel.setFrameOrigin(CGPoint(x: center.x - panel.frame.width / 2, y: center.y))
     }
 
     func place(on screen: NSScreen) {
@@ -446,8 +447,11 @@ final class Toolbar {
         actions[sender]?()
     }
 
-    @objc private func fixPermission() {
-        onFixPermission?()
+    @objc private func changeMode(_ sender: NSSegmentedControl) {
+        let options = PointerMode.allCases
+        if options.indices.contains(sender.selectedSegment) {
+            onSelectMode?(options[sender.selectedSegment])
+        }
     }
 
     private static func inkDot(_ color: CGColor) -> NSImage {

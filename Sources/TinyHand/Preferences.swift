@@ -11,6 +11,17 @@ struct Shortcut: Equatable {
     static let clearDefault = Shortcut(keyCode: UInt32(kVK_ANSI_X), modifiers: UInt32(controlKey | optionKey), display: "⌃⌥X")
 }
 
+enum PointerMode: String, CaseIterable {
+    case control, draw
+
+    var title: String {
+        switch self {
+        case .control: return "Control"
+        case .draw: return "Draw"
+        }
+    }
+}
+
 enum InteractKey: String, CaseIterable {
     case option, command, control, off
 
@@ -79,7 +90,7 @@ enum InkChoice: String, CaseIterable {
 }
 
 enum Preferences {
-    static let changed = Notification.Name("TinyHandPreferencesChanged")
+    static let changed = Notification.Name("PlayPointerPreferencesChanged")
     private static let defaults = UserDefaults.standard
 
     static var toggleShortcut: Shortcut {
@@ -90,6 +101,11 @@ enum Preferences {
     static var clearShortcut: Shortcut {
         get { loadShortcut("shortcut.clear") ?? .clearDefault }
         set { saveShortcut(newValue, "shortcut.clear") }
+    }
+
+    static var pointerMode: PointerMode {
+        get { defaults.string(forKey: "pointerMode").flatMap(PointerMode.init(rawValue:)) ?? .control }
+        set { set(newValue.rawValue, "pointerMode") }
     }
 
     static let pointerSizeRange: ClosedRange<CGFloat> = 0.08...0.20
@@ -177,7 +193,7 @@ enum Preferences {
     static func resetAll() {
         for key in ["shortcut.toggle", "shortcut.clear", "pointerSize", "showShadow", "fadeSeconds",
                     "sound.hands", "sound.laser", "interactKey", "interactKeepsHand", "pinnedStyles", "pointerStyle",
-                    "inkChoice", "showInkButton", "tapSound"] {
+                    "inkChoice", "showInkButton", "tapSound", "pointerMode"] {
             defaults.removeObject(forKey: key)
         }
         NotificationCenter.default.post(name: changed, object: nil)

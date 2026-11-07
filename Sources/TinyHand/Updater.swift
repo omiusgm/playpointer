@@ -1,33 +1,13 @@
-import AppKit
-import Sparkle
+import Foundation
 
-final class Updater: NSObject, SPUStandardUserDriverDelegate {
-    private var controller: SPUStandardUpdaterController?
-
-    static var isAvailable: Bool {
-        Bundle.main.bundlePath.hasSuffix(".app")
-            && Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil
-    }
-
-    func start() {
-        guard Updater.isAvailable, controller == nil else {
-            return
-        }
-        controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: self)
-    }
-
-    func checkForUpdates() {
-        controller?.checkForUpdates(nil)
-    }
-
+// This fork has no update channel. The compatibility surface keeps the settings
+// UI hidden until a separately owned, signed update system is implemented.
+final class Updater {
+    static let isAvailable = false
+    func start() {}
+    func checkForUpdates() {}
     var automaticallyChecks: Bool {
-        get { controller?.updater.automaticallyChecksForUpdates ?? false }
-        set { controller?.updater.automaticallyChecksForUpdates = newValue }
-    }
-
-    var supportsGentleScheduledUpdateReminders: Bool { true }
-
-    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        NSApp.activate(ignoringOtherApps: true)
+        get { false }
+        set {}
     }
 }

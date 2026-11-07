@@ -9,6 +9,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     var applyClearShortcut: ((Shortcut) -> Bool)? {
         didSet { model.applyClearShortcut = applyClearShortcut }
     }
+    var applyPointerMode: ((PointerMode) -> Void)? {
+        didSet { model.applyPointerMode = applyPointerMode }
+    }
     var onRecording: ((Bool) -> Void)? {
         didSet { model.onRecording = onRecording }
     }
@@ -68,7 +71,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 780, height: 560),
                          styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
-        w.title = "TinyHand Settings"
+        w.title = "PlayPointer Settings"
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         w.isReleasedWhenClosed = false

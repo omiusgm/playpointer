@@ -3,18 +3,22 @@ import ApplicationServices
 
 final class WelcomeWindow: NSObject {
     var onTryIt: (() -> Void)?
+    var onTryDrawing: (() -> Bool)?
     var simulateUntrusted = false
 
     private final class Card: NSWindow {
+        var onCancel: (() -> Void)?
         override var canBecomeKey: Bool { true }
         override func cancelOperation(_ sender: Any?) {
-            orderOut(nil)
+            onCancel?()
         }
     }
 
     private var window: Card?
     private var timer: Timer?
     private var askedAt: Date?
+    private var forDrawing = false
+    private var tapUnavailable = false
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
     private let button = NSButton(title: "", target: nil, action: nil)
@@ -22,7 +26,10 @@ final class WelcomeWindow: NSObject {
 
     static let shownKey = "welcomeShown"
 
-    func show() {
+    func show(forDrawing: Bool = false) {
+        self.forDrawing = forDrawing
+        tapUnavailable = false
+        askedAt = nil
         if window == nil {
             build()
         }
@@ -46,18 +53,35 @@ final class WelcomeWindow: NSObject {
     }
 
     private func refresh() {
-        title.stringValue = granted ? "You're all set" : "Allow Accessibility"
-        subtitle.stringValue = granted ? "Press \(Preferences.toggleShortcut.display) any time to start." : "So your clicks become taps, not real clicks."
-        button.title = granted ? "Start" : "Open Settings"
-        tip.isHidden = granted || askedAt.map { Date().timeIntervalSince($0) < 10 } ?? true
+        if forDrawing {
+            title.stringValue = granted && !tapUnavailable ? "Ready to draw" : "Allow Accessibility"
+            subtitle.stringValue = "Draw mode needs access to mouse events."
+            button.title = granted && !tapUnavailable ? "Start Drawing" : "Open Settings"
+            tip.isHidden = !tapUnavailable && (granted || (askedAt.map { Date().timeIntervalSince($0) < 10 } ?? true))
+        } else {
+            title.stringValue = "You're all set"
+            subtitle.stringValue = "Press \(Preferences.toggleShortcut.display) any time to start."
+            button.title = "Start"
+            tip.isHidden = true
+        }
     }
 
     @objc private func buttonPressed() {
-        if granted {
+        if !forDrawing {
             close()
             onTryIt?()
             return
         }
+        if granted && !tapUnavailable {
+            if onTryDrawing?() == true {
+                close()
+            } else {
+                tapUnavailable = true
+                refresh()
+            }
+            return
+        }
+        tapUnavailable = false
         askedAt = Date()
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
@@ -81,6 +105,7 @@ final class WelcomeWindow: NSObject {
         w.isMovableByWindowBackground = true
         w.isReleasedWhenClosed = false
         w.level = .normal
+        w.onCancel = { [weak self] in self?.close() }
 
         let card = NSVisualEffectView(frame: CGRect(origin: .zero, size: size))
         card.material = .popover
@@ -144,6 +169,7 @@ final class WelcomeWindow: NSObject {
             build()
         }
         if simulateUntrusted {
+            forDrawing = true
             askedAt = Date().addingTimeInterval(-20)
         }
         refresh()

@@ -3,9 +3,18 @@ import AppKit
 enum E2ETest {
     private final class CatcherView: NSView {
         var clicks = 0
+        var rightClicks = 0
+        var drags = 0
         var scrolls = 0
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         override func mouseDown(with event: NSEvent) {
             clicks += 1
+        }
+        override func rightMouseDown(with event: NSEvent) {
+            rightClicks += 1
+        }
+        override func mouseDragged(with event: NSEvent) {
+            drags += 1
         }
         override func scrollWheel(with event: NSEvent) {
             scrolls += 1
@@ -16,15 +25,19 @@ enum E2ETest {
         }
     }
 
-    static func run() {
+    static func run() -> Bool {
         setlinebuf(stdout)
+        guard AXIsProcessTrusted() else {
+            print("The desktop test needs Accessibility to post test clicks and exercise Draw mode.")
+            return false
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.finishLaunching()
 
         guard let screen = NSScreen.screens.first else {
             print("no screen")
-            return
+            return false
         }
         let size = CGSize(width: 520, height: 360)
         let frame = CGRect(x: screen.frame.midX - size.width / 2, y: screen.frame.midY - size.height / 2,
@@ -47,9 +60,25 @@ enum E2ETest {
                 }
             }
         }
-        func post(_ type: CGEventType, _ p: CGPoint) {
-            CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: p, mouseButton: .left)?
+        func post(_ type: CGEventType, _ p: CGPoint, flags: CGEventFlags = []) {
+            let button: CGMouseButton = type == .rightMouseDown || type == .rightMouseUp ? .right : .left
+            let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: p, mouseButton: button)
+            event?.flags = flags
+            event?.post(tap: .cghidEventTap)
+        }
+        func scroll() {
+            CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 1, wheel1: -2, wheel2: 0, wheel3: 0)?
                 .post(tap: .cghidEventTap)
+            pump(0.1)
+        }
+        func clickToolbar(at point: CGPoint?) {
+            guard let point = point else { return }
+            let p = CGPoint(x: point.x, y: screen.frame.height - point.y)
+            post(.mouseMoved, p)
+            pump(0.25)
+            post(.leftMouseDown, p)
+            post(.leftMouseUp, p)
+            pump(0.25)
         }
         func state(_ label: String, _ overlay: OverlayController) {
             let m = NSEvent.mouseLocation
@@ -58,12 +87,49 @@ enum E2ETest {
                          down ? "yes" : "no", overlay.debugState))
         }
 
-        let savedStyle = PointerStyle.saved
+        let defaults = UserDefaults.standard
+        let preferenceKeys = ["pointerMode", "pointerStyle", "interactKey", OverlayController.hintShownKey]
+        let savedPreferences = preferenceKeys.map { ($0, defaults.object(forKey: $0)) }
+        Preferences.pointerMode = .control
+        Preferences.interactKey = .option
         PointerStyle.saved = .lavender
         let overlay = OverlayController()
-        let installed = overlay.activate()
-        print("tap installed:", installed)
+        defer {
+            overlay.deactivate()
+            for (key, value) in savedPreferences {
+                defaults.set(value, forKey: key)
+            }
+            catcher.orderOut(nil)
+            CGWarpMouseCursorPosition(saved)
+            pump(0.1)
+        }
+        var passed = true
+        func check(_ condition: Bool, _ description: String) {
+            print(condition ? "PASS \(description)" : "FAIL \(description)")
+            passed = passed && condition
+        }
+        check(overlay.activate(), "pointer activation")
         pump(0.3)
+
+        post(.mouseMoved, start)
+        pump(0.2)
+        post(.leftMouseDown, start)
+        pump(0.1)
+        post(.leftMouseDragged, CGPoint(x: start.x + 40, y: start.y))
+        pump(0.1)
+        post(.leftMouseUp, CGPoint(x: start.x + 40, y: start.y))
+        post(.rightMouseDown, start)
+        post(.rightMouseUp, start)
+        pump(0.2)
+        scroll()
+        check(catcherView.clicks == 1 && catcherView.rightClicks == 1 && catcherView.drags > 0 && catcherView.scrolls > 0,
+              "Control delivers left click, right click, drag and scroll")
+        check(overlay.inkStrokes == 0, "Control creates no ink")
+        clickToolbar(at: overlay.toolbarModeCenter(.draw))
+        check(overlay.mode == .draw, "toolbar switches from Control to Draw")
+        guard overlay.mode == .draw else { return false }
+        let originalClicks = catcherView.clicks
+        let originalDrags = catcherView.drags
 
         post(.mouseMoved, start)
         pump(0.2)
@@ -84,13 +150,11 @@ enum E2ETest {
         pump(0.2)
         state("released", overlay)
 
-        for _ in 0..<5 {
-            CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 1, wheel1: -2, wheel2: 0, wheel3: 0)?
-                .post(tap: .cghidEventTap)
-            pump(0.03)
-        }
-        pump(0.1)
-        print("scroll ticks right after drawing that reached the app (of 5):", catcherView.scrolls)
+        check(overlay.inkStrokes > 0, "Draw creates ink")
+        check(catcherView.clicks == originalClicks && catcherView.drags == originalDrags, "Draw captures clicks and drags")
+        let originalScrolls = catcherView.scrolls
+        scroll()
+        check(catcherView.scrolls > originalScrolls, "Draw still delivers scroll")
 
         let before = overlay.inkStrokes
         post(.leftMouseDown, start)
@@ -98,19 +162,15 @@ enum E2ETest {
         post(.leftMouseUp, start)
         pump(0.2)
         state("plain click", overlay)
-        print("plain click added strokes:", overlay.inkStrokes - before)
+        check(overlay.inkStrokes == before, "a plain click adds no ink")
 
-        let primaryH = NSScreen.screens.first?.frame.height ?? 0
-        if let c = overlay.toolbarButtonCenter(.laser) {
-            let p = CGPoint(x: c.x, y: primaryH - c.y)
-            post(.mouseMoved, p)
-            pump(0.2)
-            post(.leftMouseDown, p)
-            post(.leftMouseUp, p)
-            pump(0.4)
-        }
-        print("style after clicking the toolbar's laser button:", overlay.style.rawValue)
-        print("clicks that leaked to the catcher window:", catcherView.clicks)
+        post(.leftMouseDown, start, flags: .maskAlternate)
+        post(.leftMouseUp, start, flags: .maskAlternate)
+        pump(0.2)
+        check(catcherView.clicks == originalClicks + 1, "Draw forwards an Option-click")
+
+        clickToolbar(at: overlay.toolbarButtonCenter(.laser))
+        check(overlay.style == .laser, "style toolbar button works in Draw")
 
         let clickPoint = start
         overlay.resetTapWait()
@@ -133,19 +193,17 @@ enum E2ETest {
                          mine.avgUsecLatency / 1000, mine.maxUsecLatency / 1000))
         }
         print(String(format: "longest a click waited to reach the tap during the stall: %.1f ms", overlay.tapMaxWaitMs))
-        print("clicks that leaked during the stall:", catcherView.clicks)
+        check(catcherView.clicks == originalClicks + 1, "Draw captures clicks while the main thread is stalled")
+
+        clickToolbar(at: overlay.toolbarModeCenter(.control))
+        check(overlay.mode == .control, "toolbar switches from Draw to Control")
 
         for down in [true, false] {
             CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: down)?.post(tap: .cghidEventTap)
             pump(0.1)
         }
         pump(0.2)
-        print("active after Esc:", overlay.isActive)
-
-        overlay.deactivate()
-        PointerStyle.saved = savedStyle
-        catcher.orderOut(nil)
-        CGWarpMouseCursorPosition(saved)
-        pump(0.1)
+        check(!overlay.isActive, "Esc exits Control")
+        return passed
     }
 }

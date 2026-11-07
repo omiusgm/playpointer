@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var toggleItem: NSMenuItem?
     private var clearItem: NSMenuItem?
     private var soundItem: NSMenuItem?
+    private var modeItems: [PointerMode: NSMenuItem] = [:]
     private var toggleHotKey: UInt32?
     private var clearHotKey: UInt32?
 
@@ -33,19 +34,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             return [frame]
         }
-        enableLaunchAtLoginOnFirstRun()
         updater.start()
         setupStatusItem()
         setupSettings()
         registerHotKeys()
 
         overlay.onNeedsPermission = { [weak self] in
-            self?.welcome.show()
+            self?.showWelcome()
         }
         welcome.onTryIt = { [weak self] in
             self?.overlay.activate()
         }
-        if !UserDefaults.standard.bool(forKey: WelcomeWindow.shownKey) || !AXIsProcessTrusted() {
+        welcome.onTryDrawing = { [weak self] in
+            guard let self = self, self.overlay.setMode(.draw) else { return false }
+            return self.overlay.activate()
+        }
+        if !UserDefaults.standard.bool(forKey: WelcomeWindow.shownKey) {
             welcome.show()
         }
     }
@@ -71,6 +75,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clearItem = clear
         soundItem = sound
         menu.addItem(toggle)
+        let modeItem = NSMenuItem(title: "Pointer Mode", action: nil, keyEquivalent: "")
+        let modes = NSMenu()
+        for mode in PointerMode.allCases {
+            let item = NSMenuItem(title: mode.title, action: #selector(selectMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            modes.addItem(item)
+            modeItems[mode] = item
+        }
+        modeItem.submenu = modes
+        menu.addItem(modeItem)
         menu.addItem(clear)
         menu.addItem(sound)
         menu.addItem(.separator())
@@ -79,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""))
         }
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit TinyHand", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit PlayPointer", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
         menu.delegate = self
     }
@@ -91,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.applyClearShortcut = { [weak self] s in
             self?.apply(s, isToggle: false) ?? false
         }
+        settings.applyPointerMode = { [weak self] mode in self?.overlay.requestMode(mode) }
         settings.updater = Updater.isAvailable ? updater : nil
         settings.onRecording = { [weak self] recording in
             if recording {
@@ -127,6 +143,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggleItem?.title = "\(on ? "Turn Pointer Off" : "Turn Pointer On")    \(Preferences.toggleShortcut.display)"
         clearItem?.title = "Clear Drawing    \(Preferences.clearShortcut.display)"
         soundItem?.state = overlay.soundOn ? .on : .off
+        for (mode, item) in modeItems {
+            item.state = Preferences.pointerMode == mode ? .on : .off
+        }
         permissionItem?.isHidden = AXIsProcessTrusted()
     }
 
@@ -191,14 +210,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         overlay.soundOn.toggle()
     }
 
+    @objc private func selectMode(_ item: NSMenuItem) {
+        if let rawValue = item.representedObject as? String, let mode = PointerMode(rawValue: rawValue) {
+            overlay.requestMode(mode)
+        }
+    }
+
     @objc private func openSettings() {
         overlay.exit()
         settings.show()
     }
 
     @objc private func showWelcome() {
-        overlay.exit()
-        welcome.show()
+        if overlay.mode == .draw { overlay.exit() }
+        welcome.show(forDrawing: true)
     }
 
     @objc private func checkForUpdates() {
@@ -211,29 +236,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.terminate(nil)
     }
 
-    private func enableLaunchAtLoginOnFirstRun() {
-        let key = "loginItemSetUp"
-        let path = Bundle.main.bundlePath
-        let installed = path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/")
-        guard installed, !UserDefaults.standard.bool(forKey: key) else {
-            return
-        }
-        UserDefaults.standard.set(true, forKey: key)
-        Preferences.launchAtLogin = true
-        Log.write("first run: open at login = \(Preferences.launchAtLogin)")
-    }
-
     private func updateIcon() {
         let on = overlay.isActive
         let image = Bundle.main.image(forResource: on ? "menubar_on" : "menubar_off")
             ?? NSImage(systemSymbolName: on ? "hand.point.up.left.fill" : "hand.point.up.left",
-                       accessibilityDescription: "TinyHand")
+                       accessibilityDescription: "PlayPointer")
         image?.size = NSSize(width: 18, height: 18)
         image?.isTemplate = true
         statusItem.button?.image = image
         statusItem.button?.toolTip = overlay.isActive
-            ? "TinyHand is on — click to turn off, right-click for the menu"
-            : "TinyHand — click to turn on, right-click for the menu"
+            ? "PlayPointer is on — click to turn off, right-click for the menu"
+            : "PlayPointer — click to turn on, right-click for the menu"
     }
 
     private func editingMenu() -> NSMenu {
@@ -241,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        appMenu.addItem(withTitle: "Quit TinyHand", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit PlayPointer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
         let editItem = NSMenuItem()

@@ -4,11 +4,10 @@ source "$(dirname "$0")/lib.sh"
 cd "$ROOT"
 
 swift build -c release
-quit_running_app
 
-APP="dist/$APP_NAME.app"
-make_bundle .build/release/$APP_NAME "$APP" "0"
+APP="${PLAYPOINTER_DIST_DIR:-dist}/$APP_NAME.app"
+make_bundle .build/release/$EXECUTABLE_NAME "$APP" "0"
 
-IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application}"
+IDENTITY="${CODESIGN_IDENTITY:--}"
 sign_app "$APP" "$IDENTITY"
 echo "Built $APP $VERSION (signed with: $IDENTITY)"

@@ -21,14 +21,16 @@ if let idx = CommandLine.arguments.firstIndex(of: "--toolbar-test") {
     _ = NSApplication.shared
     let bar = Toolbar()
     bar.select(.lavender)
-    bar.setNeedsPermission(CommandLine.arguments.contains("--needs-permission"))
+    let drawing = CommandLine.arguments.contains("--draw")
+    bar.selectMode(drawing ? .draw : .control)
     let out = CommandLine.arguments.count > idx + 1 ? CommandLine.arguments[idx + 1] : "/tmp/toolbar.png"
     if let data = bar.snapshot()?.representation(using: .png, properties: [:]) {
         try? data.write(to: URL(fileURLWithPath: out))
         print("rendered \(out)")
     }
     if CommandLine.arguments.contains("--hint") {
-        bar.showHint([("Click", "to tap"), ("Drag", "to draw"), ("Hold ⌥", "to click for real"), ("Esc", "to exit")])
+        bar.showHint(drawing ? [("Click", "to tap"), ("Drag", "to draw"), ("Esc", "to exit")]
+            : [("Control", "to use apps"), ("Draw", "to annotate"), ("Esc", "to exit")])
         if let data = bar.snapshotHint()?.representation(using: .png, properties: [:]) {
             let hintOut = out.replacingOccurrences(of: ".png", with: "-hint.png")
             try? data.write(to: URL(fileURLWithPath: hintOut))
@@ -85,9 +87,12 @@ if let idx = CommandLine.arguments.firstIndex(of: "--make-hand"), CommandLine.ar
     exit(0)
 }
 
+if CommandLine.arguments.contains("--input-test") {
+    exit(InputTapTest.run() ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--e2e-test") {
-    E2ETest.run()
-    exit(0)
+    exit(E2ETest.run() ? 0 : 1)
 }
 
 if CommandLine.arguments.contains("--click-test") {

@@ -1,26 +1,36 @@
 import AppKit
 
 final class InputTap {
-    var onMouseDown: (() -> Void)?
-    var onInteractDown: (() -> Void)?
-    var onInteractUp: (() -> Void)?
-    var onMouseUp: (() -> Void)?
+    enum Feedback {
+        case draw, interact
+    }
+
+    var onMouseDown: ((Int64, Feedback) -> Void)?
+    var onMouseUp: ((Int64, Feedback) -> Void)?
     var onLeftDragged: (() -> Void)?
     var onPassThroughPress: ((CGPoint) -> Void)?
 
+    private enum Route {
+        case draw
+        case interact(CGEventFlags)
+    }
+
+    private struct Press {
+        let route: Route
+        let generation: UInt
+    }
+
     private let lock = NSLock()
-    private var _active = false
+    private var active = false
+    private var generation: UInt = 0
+    private var presses: [Int64: Press] = [:]
     private var _passThroughRects: [CGRect] = []
     private var _interactKey: CGEventFlags = []
-    private var _interactPress = false
+    private var _maxWaitMs: Double = 0
 
     var passThroughRects: [CGRect] {
         get { lock.withLock { _passThroughRects } }
         set { lock.withLock { _passThroughRects = newValue } }
-    }
-
-    private var active: Bool {
-        lock.withLock { _active }
     }
 
     var interactKey: CGEventFlags {
@@ -29,19 +39,21 @@ final class InputTap {
     }
 
     var interactPressing: Bool {
-        lock.withLock { _interactPress }
+        lock.withLock {
+            active && presses.values.contains {
+                if case .interact = $0.route { return $0.generation == generation }
+                return false
+            }
+        }
     }
 
-    private var passingThrough = false
-    private(set) var maxWaitMs: Double = 0
+    var maxWaitMs: Double { lock.withLock { _maxWaitMs } }
     private var tap: CFMachPort?
-    private var thread: Thread?
-
-    private(set) var isInstalled = false
+    var isInstalled: Bool { lock.withLock { tap != nil } }
 
     @discardableResult
     func install() -> Bool {
-        guard tap == nil else {
+        guard !isInstalled else {
             return true
         }
 
@@ -82,114 +94,124 @@ final class InputTap {
             ready.signal()
             CFRunLoopRun()
         }
-        thread.name = "TinyHand event tap"
+        thread.name = "PlayPointer event tap"
         thread.qualityOfService = .userInteractive
         thread.start()
         ready.wait()
 
-        self.tap = tap
-        self.thread = thread
-        isInstalled = true
+        lock.withLock {
+            self.tap = tap
+            updateEnabled()
+        }
         return true
     }
 
     func setActive(_ value: Bool) {
         lock.withLock {
-            _active = value
-            _interactPress = false
+            guard active != value else { return }
+            active = value
+            generation &+= 1
+            updateEnabled()
         }
-        guard let tap = tap else {
-            return
-        }
-        CGEvent.tapEnable(tap: tap, enable: value)
     }
 
-    func simulate(_ type: CGEventType) {
-        guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: .zero, mouseButton: .left) else {
-            return
-        }
-        let was = active
-        lock.withLock { _active = true }
-        _ = handle(type: type, event: event)
-        lock.withLock { _active = was }
+    private func updateEnabled() {
+        guard let tap = tap else { return }
+        // Finish any press that started in Draw, even after Esc or a mode change.
+        CGEvent.tapEnable(tap: tap, enable: active || !presses.isEmpty)
     }
 
     func resetWait() {
-        maxWaitMs = 0
+        lock.withLock { _maxWaitMs = 0 }
     }
 
-    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        if event.timestamp > 0 {
-            let wait = Double(DispatchTime.now().uptimeNanoseconds &- event.timestamp) / 1_000_000
-            if wait < 600_000 {
-                maxWaitMs = max(maxWaitMs, wait)
+    private func notify(_ expected: UInt, _ body: @escaping (InputTap) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.lock.withLock({ self.active && self.generation == expected }) else {
+                return
             }
+            body(self)
         }
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if type == .tapDisabledByTimeout {
-                Log.write("event tap was disabled by a timeout; re-enabled")
-            }
-            if active, let tap = tap {
-                CGEvent.tapEnable(tap: tap, enable: true)
-            }
-            return Unmanaged.passUnretained(event)
-        }
+    }
 
-        guard active else {
-            return Unmanaged.passUnretained(event)
-        }
-
-        let key = interactKey
-        switch type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            if !key.isEmpty && (event.flags.contains(key) || CGEventSource.flagsState(.hidSystemState).contains(key)) {
-                lock.withLock { _interactPress = true }
-                DispatchQueue.main.async { [weak self] in self?.onInteractDown?() }
+    func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        lock.withLock {
+            let forwarded = Unmanaged.passUnretained(event)
+            if event.timestamp > 0 {
+                let wait = Double(DispatchTime.now().uptimeNanoseconds &- event.timestamp) / 1_000_000
+                if wait < 600_000 {
+                    _maxWaitMs = max(_maxWaitMs, wait)
+                }
             }
-        default:
-            break
-        }
-        if lock.withLock({ _interactPress }) {
-            event.flags.remove(key)
-            if type == .leftMouseUp || type == .rightMouseUp || type == .otherMouseUp {
-                lock.withLock { _interactPress = false }
-                DispatchQueue.main.async { [weak self] in self?.onInteractUp?() }
-            }
-            return Unmanaged.passUnretained(event)
-        }
 
-        switch type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            passingThrough = passThroughRects.contains { $0.contains(event.location) }
-            if passingThrough {
+            switch type {
+            case .tapDisabledByTimeout, .tapDisabledByUserInput:
+                updateEnabled()
+                return forwarded
+            case .leftMouseDown, .rightMouseDown, .otherMouseDown,
+                 .leftMouseUp, .rightMouseUp, .otherMouseUp,
+                 .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+                break
+            default:
+                return forwarded
+            }
+
+            let button: Int64
+            switch type {
+            case .leftMouseDown, .leftMouseUp, .leftMouseDragged: button = 0
+            case .rightMouseDown, .rightMouseUp, .rightMouseDragged: button = 1
+            default: button = event.getIntegerValueField(.mouseEventButtonNumber)
+            }
+
+            switch type {
+            case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+                presses.removeValue(forKey: button)
+                guard active else {
+                    if presses.isEmpty { updateEnabled() }
+                    return forwarded
+                }
                 let location = event.location
-                DispatchQueue.main.async { [weak self] in self?.onPassThroughPress?(location) }
-            }
-        default:
-            break
-        }
-        if passingThrough {
-            if type == .leftMouseUp || type == .rightMouseUp || type == .otherMouseUp {
-                passingThrough = false
-            }
-            return Unmanaged.passUnretained(event)
-        }
+                if _passThroughRects.contains(where: { $0.contains(location) }) {
+                    notify(generation) { $0.onPassThroughPress?(location) }
+                    return forwarded
+                }
+                let key = _interactKey
+                if !key.isEmpty && (event.flags.contains(key) || CGEventSource.flagsState(.hidSystemState).contains(key)) {
+                    presses[button] = Press(route: .interact(key), generation: generation)
+                    event.flags.remove(key)
+                    notify(generation) { $0.onMouseDown?(button, .interact) }
+                    return forwarded
+                }
+                presses[button] = Press(route: .draw, generation: generation)
+                notify(generation) { $0.onMouseDown?(button, .draw) }
+                return nil
 
-        switch type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            DispatchQueue.main.async { [weak self] in self?.onMouseDown?() }
-            return nil
-        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
-            DispatchQueue.main.async { [weak self] in self?.onMouseUp?() }
-            return nil
-        case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
-            if type == .leftMouseDragged {
-                DispatchQueue.main.async { [weak self] in self?.onLeftDragged?() }
+            case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+                guard let press = presses.removeValue(forKey: button) else { return forwarded }
+                if !active && presses.isEmpty { updateEnabled() }
+                switch press.route {
+                case .draw:
+                    notify(press.generation) { $0.onMouseUp?(button, .draw) }
+                    return nil
+                case .interact(let key):
+                    event.flags.remove(key)
+                    notify(press.generation) { $0.onMouseUp?(button, .interact) }
+                    return forwarded
+                }
+
+            default:
+                guard let press = presses[button] else { return forwarded }
+                switch press.route {
+                case .draw:
+                    if type == .leftMouseDragged {
+                        notify(press.generation) { $0.onLeftDragged?() }
+                    }
+                    event.type = .mouseMoved
+                case .interact(let key):
+                    event.flags.remove(key)
+                }
+                return forwarded
             }
-            event.type = .mouseMoved
-            return Unmanaged.passUnretained(event)
-        default:
-            return Unmanaged.passUnretained(event)
         }
     }
 }

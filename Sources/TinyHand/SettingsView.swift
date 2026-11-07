@@ -48,6 +48,7 @@ final class SettingsModel: ObservableObject {
 
     var applyToggleShortcut: ((Shortcut) -> Bool)?
     var applyClearShortcut: ((Shortcut) -> Bool)?
+    var applyPointerMode: ((PointerMode) -> Void)?
     var onRecording: ((Bool) -> Void)?
     var updater: Updater?
     @Published var shortcutError: String?
@@ -130,7 +131,7 @@ final class SettingsModel: ObservableObject {
             draftError = problem.message
         } catch {
             draft = nil
-            draftError = "TinyHand couldn't read that file."
+            draftError = "PlayPointer couldn't read that file."
         }
     }
 
@@ -157,7 +158,7 @@ final class SettingsModel: ObservableObject {
             handIdea = ""
             makingHand = false
         } catch {
-            draftError = "TinyHand couldn't save that hand."
+            draftError = "PlayPointer couldn't save that hand."
         }
     }
 
@@ -334,7 +335,7 @@ struct SettingsView: View {
                 if let icon = NSImage(named: "AppIcon") ?? NSApp.applicationIconImage {
                     Image(nsImage: icon).resizable().frame(width: 22, height: 22)
                 }
-                Text("TinyHand").font(.system(size: 12, weight: .semibold))
+                Text("PlayPointer").font(.system(size: 12, weight: .semibold))
                 Spacer()
             }
             .padding(.horizontal, 10)
@@ -403,7 +404,7 @@ private struct GeneralPage: View {
         VStack(alignment: .leading, spacing: 22) {
             if !AXIsProcessTrusted() {
                 Card(title: "Permission") {
-                    Row("Accessibility", detail: "Needed so clicks become taps and you can draw.") {
+                    Row("Accessibility", detail: "Draw mode requires permission to capture mouse clicks.") {
                         PillButton(title: "Open Settings") {
                             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                                 NSWorkspace.shared.open(url)
@@ -423,8 +424,21 @@ private struct GeneralPage: View {
             if let error = model.shortcutError {
                 Text(error).font(.system(size: 12)).foregroundColor(.red)
             }
-            Card(title: "Clicking for real") {
-                Row("Hold to use the app", detail: "Clicks, drags and scrolls reach the app.") {
+            Card(title: "Pointer mode") {
+                Row("Mode", detail: Preferences.pointerMode == .control
+                    ? "Click, drag and scroll in your apps."
+                    : "Drag to draw on the screen.") {
+                    Picker("Pointer mode", selection: model.binding({ Preferences.pointerMode }, { model.applyPointerMode?($0) })) {
+                        ForEach(PointerMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    .focusable(false)
+                }
+                Row("Hold to use apps while drawing", detail: "Clicks and drags reach the app while you hold this key.") {
                     Picker("", selection: model.binding({ Preferences.interactKey }, { Preferences.interactKey = $0 })) {
                         ForEach(InteractKey.allCases, id: \.self) { key in
                             Text(key.title).tag(key)
@@ -449,7 +463,7 @@ private struct GeneralPage: View {
                 }
             }
             Card(title: "Startup") {
-                Row("Open TinyHand when you log in") {
+                Row("Open PlayPointer when you log in") {
                     Toggle("", isOn: model.binding({ Preferences.launchAtLogin }, { Preferences.launchAtLogin = $0 }))
                         .toggleStyle(.switch).labelsHidden().focusable(false)
                 }
@@ -1112,7 +1126,7 @@ private struct AboutPage: View {
                     Image(nsImage: icon).resizable().frame(width: 72, height: 72)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("TinyHand").font(.system(size: 18, weight: .bold))
+                    Text("PlayPointer").font(.system(size: 18, weight: .bold))
                     Text("Version \(version)").font(.system(size: 12)).foregroundColor(.secondary)
                     Text("A tiny hand for your Mac. Free and open source.").font(.system(size: 12)).foregroundColor(.secondary)
                 }
@@ -1122,10 +1136,10 @@ private struct AboutPage: View {
                 }
             }
             Card(title: nil) {
-                LinkRow(title: "Website", detail: "tinyhand.app", url: "https://tinyhand.app")
-                LinkRow(title: "Source code", detail: "github.com/nilbuild/tinyhand", url: "https://github.com/nilbuild/tinyhand")
-                LinkRow(title: "Made by", detail: "@nilbuild on X", url: "https://x.com/nilbuild")
-                LinkRow(title: "License", detail: "MIT", url: "https://github.com/nilbuild/tinyhand/blob/main/LICENSE")
+                LinkRow(title: "Original project", detail: "tinyhand.app", url: "https://tinyhand.app")
+                LinkRow(title: "Source code", detail: "github.com/omiusgm/playpointer", url: "https://github.com/omiusgm/playpointer")
+                LinkRow(title: "Original author", detail: "@nilbuild on X", url: "https://x.com/nilbuild")
+                LinkRow(title: "License", detail: "MIT", url: "https://github.com/omiusgm/playpointer/blob/main/LICENSE")
             }
             HStack {
                 Spacer()
@@ -1403,7 +1417,7 @@ private struct MakeHandPage: View {
                     PlainField(placeholder: "My hand", text: Binding(get: { model.handName }, set: { model.handName = String($0.prefix(16)) }))
                         .frame(width: 220)
                 }
-                Text("It should show the back of the hand, like the ones in TinyHand. If you see the palm, try another image.")
+                Text("It should show the back of the hand, like the ones in PlayPointer. If you see the palm, try another image.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
