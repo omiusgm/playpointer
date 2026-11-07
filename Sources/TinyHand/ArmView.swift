@@ -5,11 +5,13 @@ final class ArmView: NSView {
     private let rodLayer = CALayer()
     private let handLayer = CALayer()
     private let standaloneLayer = CALayer()
+    private let catFollowerLayer = CALayer()
     private let dotLayer = CAShapeLayer()
     private let dotCore = CAShapeLayer()
 
     private(set) var style: PointerStyle = .lavender
     private var asset: HandAsset?
+    private var pressedAsset: HandAsset?
 
     private var handLenFrac: CGFloat = Preferences.pointerSize
     private var showShadow = Preferences.showShadow
@@ -24,11 +26,14 @@ final class ArmView: NSView {
     var inkWidth: CGFloat { max(3, bounds.height * 0.0055) }
 
     private var pressAmount: CGFloat = 0
+    private var reactionUntil: CFTimeInterval?
     private var gripX: CGFloat?
     private var lastPose: [CGFloat] = []
-    private var lastLaserPose: [CGFloat] = []
+    private var lastLaserRadius: CGFloat = 0
     private var gripTarget: CGFloat?
-    private var displayImageHeight = 0
+    private var displayImages: [ObjectIdentifier: (height: Int, image: CGImage)] = [:]
+    private var displayImage: CGImage?
+    private var catFollow: (position: CGPoint, target: CGPoint, time: CFTimeInterval)?
 
     var isWand: Bool { style.rawValue == "funny10" }
     var isNyanCat: Bool { style.rawValue == "funny11" }
@@ -64,8 +69,11 @@ final class ArmView: NSView {
     private var nextRainbowSegment = 0
 
     var isSettling: Bool {
-        if pressAmount > 0.002 {
+        if pressAmount > 0.002 || reactionUntil != nil {
             return true
+        }
+        if style.isCatFollower {
+            return catFollow.map { $0.position != $0.target } ?? false
         }
         guard !style.isStandaloneCursor, let gx = gripX, let target = gripTarget else {
             return false
@@ -78,11 +86,18 @@ final class ArmView: NSView {
             if pointerHidden { clearPointerEffects() }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            group.isHidden = pointerHidden || style == .laser || style.isStandaloneCursor
-            standaloneLayer.isHidden = pointerHidden || !style.isStandaloneCursor
-            dotLayer.isHidden = pointerHidden || style != .laser
+            updatePointerVisibility()
             CATransaction.commit()
         }
+    }
+
+    private func updatePointerVisibility() {
+        let cat = style.isCatFollower
+        let hideCat = pointerHidden || !cat || catFollow == nil
+        group.isHidden = pointerHidden || style == .laser || cat || style.isStandaloneCursor
+        standaloneLayer.isHidden = pointerHidden || !style.isStandaloneCursor
+        catFollowerLayer.isHidden = hideCat
+        dotLayer.isHidden = pointerHidden || (style != .laser && hideCat)
     }
 
     override init(frame frameRect: NSRect) {
@@ -100,6 +115,10 @@ final class ArmView: NSView {
         standaloneLayer.shadowOffset = CGSize(width: 1, height: -1.5)
         standaloneLayer.shadowRadius = 2
 
+        root.addSublayer(catFollowerLayer)
+        catFollowerLayer.shadowColor = NSColor.black.cgColor
+        catFollowerLayer.shadowOffset = CGSize(width: 1, height: -2)
+        catFollowerLayer.shadowRadius = 3
         root.addSublayer(dotLayer)
 
         group.masksToBounds = false
@@ -135,36 +154,55 @@ final class ArmView: NSView {
         clearPointerEffects()
         style = newStyle
         asset = newStyle.assetName.flatMap(HandAsset.load)
+        pressedAsset = newStyle.pressedAssetName.flatMap(HandAsset.load)
+        if newStyle.isCatFollower || pressedAsset != nil { pressAmount = 0 }
+        displayImages.removeAll()
+        displayImage = nil
         if newStyle != .laser && asset == nil {
             style = .laser
+            pressedAsset = nil
         }
         updateInkColor()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         standaloneLayer.contents = style.isStandaloneCursor ? asset?.image : nil
+        catFollowerLayer.contents = nil
         if let a = asset, style != .laser {
-            if style.isStandaloneCursor {
+            if style.isCatFollower {
+                catFollowerLayer.contents = a.image
+                catFollowerLayer.magnificationFilter = style == .catPixel ? .nearest : .linear
+                catFollowerLayer.minificationFilter = style == .catPixel ? .nearest : .linear
+                displayImage = a.image
+            } else if style.isStandaloneCursor {
                 standaloneLayer.bounds = .zero
                 standaloneLayer.anchorPoint = CGPoint(x: a.tipX, y: 1 - a.tip)
             } else {
-                group.anchorPoint = CGPoint(x: a.rodX, y: 0)
-                displayImageHeight = 0
+                if let pressedAsset { _ = preparedDisplayImage(pressedAsset) }
                 updateDisplayImage(a)
-                rodLayer.contentsRect = CGRect(x: 0, y: 1 - a.rodEnd, width: 1, height: a.rodEnd - a.wrist)
-                handLayer.contentsRect = CGRect(x: 0, y: 1 - a.wrist, width: 1, height: a.wrist - a.handTop)
             }
         }
+        updatePointerVisibility()
         CATransaction.commit()
-        let hidden = pointerHidden
-        pointerHidden = hidden
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not used")
     }
 
-    func press() {
+    func press(at now: CFTimeInterval = CACurrentMediaTime()) {
+        if pointerHidden && (style.isCatFollower || pressedAsset != nil) { return }
         pressAmount = 1
+        if pressedAsset != nil {
+            reactionUntil = now + 0.15
+        }
+    }
+
+    private func reactionAsset(at now: CFTimeInterval) -> HandAsset? {
+        guard let reactionUntil, held || now < reactionUntil else {
+            self.reactionUntil = nil
+            return nil
+        }
+        return pressedAsset
     }
 
     func showWandSparks(at cursor: CGPoint) {
@@ -216,6 +254,16 @@ final class ArmView: NSView {
 
     func clearPointerEffects() {
         stopWandSparks()
+        reactionUntil = nil
+        if pressedAsset != nil { pressAmount = 0 }
+        if style.isCatFollower {
+            catFollow = nil
+            pressAmount = 0
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            updatePointerVisibility()
+            CATransaction.commit()
+        }
         if trailAnchor != nil {
             trailAnchor = nil
             nextRainbowSegment = 0
@@ -287,12 +335,16 @@ final class ArmView: NSView {
         segment.add(fade, forKey: "fade")
     }
 
-    func aim(cursor: CGPoint) {
+    func aim(cursor: CGPoint, at now: CFTimeInterval = CACurrentMediaTime()) {
         if let burst = wandBurst,
-           CACurrentMediaTime() >= burst.endsAt || hypot(cursor.x - burst.cursor.x, cursor.y - burst.cursor.y) > 6 {
+           now >= burst.endsAt || hypot(cursor.x - burst.cursor.x, cursor.y - burst.cursor.y) > 6 {
             stopWandSparks()
         }
         if isNyanCat && !pointerHidden { updateRainbowTrail(at: cursor) }
+        if style.isCatFollower, let asset {
+            if !pointerHidden { aimCatFollower(cursor: cursor, asset: asset, now: now) }
+            return
+        }
         if !held {
             pressAmount += (0 - pressAmount) * 0.18
         }
@@ -306,13 +358,12 @@ final class ArmView: NSView {
         let gx = gripX.map { $0 + (targetX - $0) * gripFollow } ?? targetX
         gripX = gx
         gripTarget = targetX
-        let grip = CGPoint(x: gx, y: -gripDepthFrac * screenH)
-
+        var grip = CGPoint(x: gx, y: -gripDepthFrac * screenH)
         if style == .laser {
             aimLaser(cursor: cursor)
             return
         }
-        guard let a = asset else {
+        guard let a = reactionAsset(at: now) ?? asset else {
             return
         }
         updateDisplayImage(a)
@@ -329,10 +380,16 @@ final class ArmView: NSView {
         let tipOffX = (a.tipX - a.rodX) * widthPts
 
         let along = sqrt(max(0, reach * reach - tipOffX * tipOffX))
-        var rodLen = along - handTipPts
-        rodLen = max(minRodFrac * screenH, rodLen)
+        let minRodLen = minRodFrac * screenH
+        let rodLen = max(minRodLen, along - handTipPts)
         let tipAngle = atan2(rodLen + handTipPts, tipOffX)
         let rotation = aimAngle - tipAngle
+        if pressedAsset != nil && rodLen == minRodLen {
+            // Keep the hotspot aligned even when the minimum rod length moves the grip back.
+            let correction = reach - hypot(rodLen + handTipPts, tipOffX)
+            grip.x += cos(aimAngle) * correction
+            grip.y += sin(aimAngle) * correction
+        }
 
         let lift = currentLift(screenH)
         let sx = lift * 0.6
@@ -342,8 +399,8 @@ final class ArmView: NSView {
             height: sx * sin(-rotation) + sy * cos(-rotation)
         )
 
-        let pose = [rotation, rodLen, handPts, widthPts, grip.x, lift, pressAmount, showShadow ? 1 : 0, a.aspect]
-            .map { ($0 * 100).rounded() }
+        let values = [rotation, rodLen, handPts, widthPts, grip.x, grip.y, lift, pressAmount, showShadow ? 1 : 0, a.aspect]
+        let pose = pressedAsset != nil ? values : values.map { ($0 * 100).rounded() }
         guard pose != lastPose else {
             return
         }
@@ -388,40 +445,123 @@ final class ArmView: NSView {
         CATransaction.commit()
     }
 
-    private func aimLaser(cursor: CGPoint) {
-        let press = pressAmount
-        let r = max(4, bounds.height * 0.0038 * handLenFrac / 0.13) * (1 + 0.2 * press)
-        let laserPose = [r, cursor.x, cursor.y].map { ($0 * 100).rounded() }
-        guard laserPose != lastLaserPose else {
-            return
+    private func aimCatFollower(cursor: CGPoint, asset: HandAsset, now: CFTimeInterval) {
+        let previous = catFollow
+        let elapsed = previous.map { max(0, now - $0.time) } ?? (1.0 / 120)
+        if !held {
+            pressAmount *= CGFloat(exp(-elapsed / 0.045))
         }
-        lastLaserPose = laserPose
-        let core = r * 0.45
+
+        let frame = reactionAsset(at: now) ?? asset
+        let height = min(handLenFrac * bounds.height * 0.54, bounds.width * 0.4 / frame.aspect)
+            * (1 - 0.06 * pressAmount)
+        let halfWidth = height * frame.aspect / 2
+        let halfHeight = height / 2
+        let gap = laserRadius + 5
+        let centers = bounds.insetBy(dx: halfWidth, dy: halfHeight)
+        let below = cursor.y - halfHeight - gap
+        let target = CGPoint(
+            x: min(centers.maxX, max(centers.minX, cursor.x + halfWidth * 0.38)),
+            y: below >= centers.minY ? min(centers.maxY, below) : min(centers.maxY, cursor.y + halfHeight + gap)
+        )
+
+        var position = target
+        if let previous, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let remaining = CGFloat(exp(-elapsed / 0.048))
+            let dx = (previous.position.x - target.x) * remaining
+            let dy = (previous.position.y - target.y) * remaining
+            let distance = hypot(dx, dy)
+            if distance > 0.5 {
+                let limit = min(1, height * 1.3 / distance)
+                position.x += dx * limit
+                position.y += dy * limit
+            }
+        }
+        catFollow = (position, target, now)
+
+        // A fast move can bring the hotspot into the lagging sprite's frame.
+        // Slide the sprite clear along the shortest direction that fits on screen.
+        position.x = min(centers.maxX, max(centers.minX, position.x))
+        position.y = min(centers.maxY, max(centers.minY, position.y))
+        let clearanceX = halfWidth + gap
+        let clearanceY = halfHeight + gap
+        if abs(position.x - cursor.x) < clearanceX && abs(position.y - cursor.y) < clearanceY {
+            let options = [
+                CGPoint(x: position.x, y: cursor.y - clearanceY),
+                CGPoint(x: position.x, y: cursor.y + clearanceY),
+                CGPoint(x: cursor.x - clearanceX, y: position.y),
+                CGPoint(x: cursor.x + clearanceX, y: position.y),
+            ].filter {
+                (centers.minX...centers.maxX).contains($0.x) && (centers.minY...centers.maxY).contains($0.y)
+            }
+            position = options.min {
+                hypot($0.x - position.x, $0.y - position.y) < hypot($1.x - position.x, $1.y - position.y)
+            } ?? target
+        }
+
+        let spriteBounds = CGRect(x: 0, y: 0, width: halfWidth * 2, height: height)
+        let shadowOpacity: Float = showShadow ? 0.26 : 0
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let dot = CGPath(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil)
-        dotLayer.path = dot
-        dotLayer.shadowPath = dot
-        dotCore.path = CGPath(ellipseIn: CGRect(x: -core, y: -core, width: 2 * core, height: 2 * core), transform: nil)
-        dotLayer.position = cursor
-        dotLayer.shadowRadius = r * (2.2 + 1.0 * press)
+        if displayImage !== frame.image {
+            displayImage = frame.image
+            catFollowerLayer.contents = frame.image
+        }
+        if catFollowerLayer.bounds != spriteBounds { catFollowerLayer.bounds = spriteBounds }
+        if catFollowerLayer.position != position { catFollowerLayer.position = position }
+        if catFollowerLayer.shadowOpacity != shadowOpacity { catFollowerLayer.shadowOpacity = shadowOpacity }
+        aimLaser(cursor: cursor)
+        if previous == nil { updatePointerVisibility() }
         CATransaction.commit()
     }
 
-    private func updateDisplayImage(_ a: HandAsset) {
+    private var laserRadius: CGFloat {
+        max(4, bounds.height * 0.0038 * handLenFrac / 0.13) * (1 + 0.2 * pressAmount)
+    }
+
+    private func aimLaser(cursor: CGPoint) {
+        let r = laserRadius
+        let shadowRadius = r * (2.2 + pressAmount)
+        guard dotLayer.position != cursor || r != lastLaserRadius || dotLayer.shadowRadius != shadowRadius else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if r != lastLaserRadius {
+            lastLaserRadius = r
+            let core = r * 0.45
+            let dot = CGPath(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil)
+            dotLayer.path = dot
+            dotLayer.shadowPath = dot
+            dotCore.path = CGPath(ellipseIn: CGRect(x: -core, y: -core, width: 2 * core, height: 2 * core), transform: nil)
+        }
+        dotLayer.position = cursor
+        dotLayer.shadowRadius = shadowRadius
+        CATransaction.commit()
+    }
+
+    private func preparedDisplayImage(_ a: HandAsset) -> CGImage {
         let full = a.image
         let scale = window?.backingScaleFactor ?? 2
         let restPts = handLenFrac * bounds.height / (a.wrist - a.handTop)
         let step = 64
         let needed = (Int((restPts * scale).rounded(.up)) + step - 1) / step * step
         let height = needed >= full.height * 9 / 10 ? full.height : max(step, needed)
-        guard height != displayImageHeight else {
-            return
-        }
-        displayImageHeight = height
+        let key = ObjectIdentifier(full)
+        if let cached = displayImages[key], cached.height == height { return cached.image }
         let image = height == full.height ? full : HandAsset.resized(full, height: height) ?? full
+        displayImages[key] = (height, image)
+        return image
+    }
+
+    private func updateDisplayImage(_ a: HandAsset) {
+        let image = preparedDisplayImage(a)
+        guard displayImage !== image else { return }
+        displayImage = image
+        lastPose = []
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        group.anchorPoint = CGPoint(x: a.rodX, y: 0)
+        rodLayer.contentsRect = CGRect(x: 0, y: 1 - a.rodEnd, width: 1, height: a.rodEnd - a.wrist)
+        handLayer.contentsRect = CGRect(x: 0, y: 1 - a.wrist, width: 1, height: a.wrist - a.handTop)
         rodLayer.contents = image
         handLayer.contents = image
         CATransaction.commit()
@@ -442,6 +582,7 @@ final class ArmView: NSView {
         rodLayer.contentsScale = scale
         handLayer.contentsScale = scale
         standaloneLayer.contentsScale = scale
+        catFollowerLayer.contentsScale = scale
         ink.scale = scale
     }
 }

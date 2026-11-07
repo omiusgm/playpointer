@@ -1,10 +1,12 @@
 import AppKit
+import SwiftUI
 
 final class Toolbar {
     var onPick: ((PointerStyle) -> Void)?
     var onSelectMode: ((PointerMode) -> Void)?
     var onToggleSound: (() -> Void)?
     var onExit: (() -> Void)?
+    var onCatalogVisibilityChanged: (() -> Void)?
 
     private final class Panel: NSPanel {
         override var canBecomeKey: Bool { false }
@@ -12,6 +14,10 @@ final class Toolbar {
     }
 
     private final class Button: NSButton {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
+    private final class CatalogHost<Content: View>: NSHostingView<Content> {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
@@ -25,6 +31,8 @@ final class Toolbar {
     private var styleButtons: [PointerStyle: Button] = [:]
     private var shownStyles: [PointerStyle] = []
     private var current: PointerStyle?
+    private var catalogButton: Button?
+    private var catalog: Panel?
     private var inkButton: Button?
     private var swatches: [InkChoice: Button] = [:]
     private var inkOpen = false
@@ -35,6 +43,7 @@ final class Toolbar {
     private let trayStack = NSStackView()
     private var hint: Panel?
 
+    var catalogFrame: CGRect? { catalog?.frame }
     var frame: CGRect { inkOpen ? panel.frame.union(tray.frame) : panel.frame }
 
     init() {
@@ -90,6 +99,11 @@ final class Toolbar {
             trayStack.bottomAnchor.constraint(equalTo: trayBackground.bottomAnchor),
         ])
 
+        let more = makeButton(symbol: "plus", tip: "Все указатели") { [weak self] in
+            self?.toggleCatalog()
+        }
+        catalogButton = more
+        stack.addArrangedSubview(more)
         stack.addArrangedSubview(Toolbar.divider())
         modes.segmentCount = PointerMode.allCases.count
         modes.trackingMode = .selectOne
@@ -128,6 +142,77 @@ final class Toolbar {
         }
     }
 
+    private func toggleCatalog() {
+        if !closeCatalog() { showCatalog() }
+    }
+
+    private func showCatalog() {
+        guard catalog == nil, let button = catalogButton,
+              let screen = panel.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let width = min(400, visible.width - 24)
+        let height = min(340, visible.maxY - panel.frame.maxY - 54)
+        guard width >= 80, height >= 50 else { return }
+        setInkOpen(false)
+        hideHint()
+
+        let pop = Panel(contentRect: CGRect(x: 0, y: 0, width: width, height: height + 34),
+                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        pop.isOpaque = false
+        pop.backgroundColor = .clear
+        pop.hasShadow = true
+        pop.hidesOnDeactivate = false
+        pop.isFloatingPanel = true
+        pop.level = NSWindow.Level(rawValue: panel.level.rawValue + 2)
+        pop.collectionBehavior = panel.collectionBehavior
+
+        let glass = NSVisualEffectView.darkGlass(radius: 16)
+        pop.contentView = glass
+        let content = VStack(alignment: .leading, spacing: 0) {
+            Text("Все указатели")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 16)
+                .frame(height: 34, alignment: .bottomLeading)
+                .accessibilityAddTraits(.isHeader)
+            PointerCatalog(selected: current, width: width, height: height) { [weak self] style in
+                guard let self else { return }
+                self.closeCatalog()
+                self.onPick?(style)
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        let host = CatalogHost(rootView: content)
+        host.autoresizingMask = [.width, .height]
+        host.frame = glass.bounds
+        glass.addSubview(host)
+
+        let anchor = panel.convertToScreen(button.convert(button.bounds, to: nil)).midX
+        let x = min(max(anchor - width / 2, visible.minX + 12), visible.maxX - width - 12)
+        pop.setFrameOrigin(CGPoint(x: x, y: panel.frame.maxY + 8))
+        catalog = pop
+        button.layer?.backgroundColor = NSColor(white: 1, alpha: 0.18).cgColor
+        button.setAccessibilityLabel("Закрыть каталог указателей")
+        pop.orderFrontRegardless()
+        onCatalogVisibilityChanged?()
+    }
+
+    @discardableResult
+    func closeCatalog() -> Bool {
+        guard let pop = catalog else { return false }
+        catalog = nil
+        pop.orderOut(nil)
+        catalogButton?.layer?.backgroundColor = NSColor.clear.cgColor
+        catalogButton?.setAccessibilityLabel("Все указатели")
+        onCatalogVisibilityChanged?()
+        return true
+    }
+
+    func dismissCatalog(outside point: CGPoint) {
+        if let catalogFrame, !catalogFrame.contains(point), !frame.contains(point) {
+            closeCatalog()
+        }
+    }
+
     private func toggleInk() {
         setInkOpen(!inkOpen)
     }
@@ -138,6 +223,7 @@ final class Toolbar {
         }
         inkOpen = open
         if open {
+            closeCatalog()
             if swatches.isEmpty {
                 for choice in InkChoice.allCases {
                     let b = makeButton(image: nil, tip: choice.title, side: 30) { [weak self] in
@@ -269,6 +355,19 @@ final class Toolbar {
         return rep
     }
 
+    func snapshotCatalog() -> NSBitmapImageRep? {
+        guard let screen = NSScreen.main else { return nil }
+        place(on: screen)
+        showCatalog()
+        defer { closeCatalog() }
+        guard let view = catalog?.contentView else { return nil }
+        view.layer?.backgroundColor = NSColor(white: 0.16, alpha: 1).cgColor
+        view.layoutSubtreeIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep
+    }
+
     func snapshotInkTray() -> NSBitmapImageRep? {
         setInkOpen(true)
         guard let view = tray.contentView else {
@@ -371,6 +470,7 @@ final class Toolbar {
     }
 
     func select(_ style: PointerStyle) {
+        closeCatalog()
         current = style
         rebuildStyles()
         highlight(style)
@@ -390,6 +490,7 @@ final class Toolbar {
     }
 
     func place(on screen: NSScreen) {
+        closeCatalog()
         setInkOpen(false)
         let f = panel.frame
         panel.setFrameOrigin(CGPoint(x: screen.frame.midX - f.width / 2, y: screen.visibleFrame.minY + 14))
@@ -401,6 +502,7 @@ final class Toolbar {
     }
 
     func hide() {
+        closeCatalog()
         setInkOpen(false)
         hideHint()
         revealed = false
@@ -414,6 +516,7 @@ final class Toolbar {
         }
         revealed = value
         if !value {
+            closeCatalog()
             setInkOpen(false)
         }
         panel.ignoresMouseEvents = !value

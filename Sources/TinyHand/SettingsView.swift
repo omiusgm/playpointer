@@ -409,11 +409,9 @@ private struct GeneralPage: View {
         VStack(alignment: .leading, spacing: 22) {
             if !AXIsProcessTrusted() {
                 Card(title: "Разрешение") {
-                    Row("Универсальный доступ", detail: "Разрешите PlayPointer обрабатывать нажатия мыши для рисования.") {
+                    Row("Доступ для рисования", detail: "Разрешите PlayPointer обрабатывать нажатия мыши для рисования.") {
                         PillButton(title: "Открыть настройки") {
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                                NSWorkspace.shared.open(url)
-                            }
+                            WelcomeWindow.openDrawingSettings()
                         }
                     }
                 }
@@ -676,24 +674,18 @@ private struct PointerPicker: View {
     @ObservedObject var model: SettingsModel
     let purpose: Purpose
     let done: () -> Void
-    private let columns = [GridItem(.adaptive(minimum: 64, maximum: 72), spacing: 4)]
-
     var body: some View {
-        let pinned = purpose == .pin ? Set(Preferences.pinnedStyles) : []
-        let selected = purpose == .select ? PointerStyle.saved : nil
         VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    section("Кошачьи лапки", PointerStyle.catStyles, pinned, selected)
-                    section("Забавные указатели", PointerStyle.funStyles, pinned, selected)
-                    section("Остальные", PointerStyle.originalStyles + [.laser], pinned, selected)
-                    if !PointerStyle.customHands.isEmpty {
-                        section("Свои", PointerStyle.customHands, pinned, selected)
-                    }
+            PointerCatalog(
+                selected: purpose == .select ? PointerStyle.saved : nil,
+                pinned: purpose == .pin ? Set(Preferences.pinnedStyles) : []
+            ) { style in
+                switch purpose {
+                case .select: model.selectPointer(style)
+                case .pin: model.pin(style)
                 }
-                .padding(12)
+                done()
             }
-            .frame(height: 340)
             if purpose == .pin {
                 Divider()
                 Button {
@@ -716,18 +708,57 @@ private struct PointerPicker: View {
         }
         .frame(width: 400)
     }
+}
 
-    private func section(_ title: String, _ styles: [PointerStyle], _ pinned: Set<PointerStyle>, _ selected: PointerStyle?) -> some View {
+/// Shared scrollable pointer catalog. Pinned styles are unavailable for selection.
+struct PointerCatalog: View {
+    let selected: PointerStyle?
+    var pinned: Set<PointerStyle> = []
+    var width: CGFloat = 400
+    var height: CGFloat = 340
+    let onPick: (PointerStyle) -> Void
+    @State private var thumbnails: [PointerStyle: NSImage] = [:]
+    private let columns = [GridItem(.adaptive(minimum: 64, maximum: 72), spacing: 4)]
+
+    init(selected: PointerStyle?, pinned: Set<PointerStyle> = [], width: CGFloat = 400, height: CGFloat = 340, onPick: @escaping (PointerStyle) -> Void) {
+        self.selected = selected
+        self.pinned = pinned
+        self.width = width
+        self.height = height
+        self.onPick = onPick
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                section("Кошачьи указатели", PointerStyle.catStyles)
+                section("Забавные указатели", PointerStyle.funStyles)
+                section("Остальные", PointerStyle.originalStyles + [.laser])
+                if !PointerStyle.customHands.isEmpty {
+                    section("Свои", PointerStyle.customHands)
+                }
+            }
+            .padding(12)
+        }
+        .frame(width: width, height: height)
+        .onAppear {
+            let styles = PointerStyle.allCases
+            HandAsset.preloadThumbnails(styles.compactMap(\.assetName)) {
+                thumbnails = styles.reduce(into: [:]) { icons, style in
+                    icons[style] = pointerIcon(style)
+                }
+            }
+        }
+    }
+
+    private func section(_ title: String, _ styles: [PointerStyle]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).padding(.leading, 4)
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(styles, id: \.self) { style in
-                    PickerCell(style: style, added: pinned.contains(style), selected: style == selected) {
-                        switch purpose {
-                        case .select: model.selectPointer(style)
-                        case .pin: model.pin(style)
-                        }
-                        done()
+                    PickerCell(style: style, icon: thumbnails[style] ?? pointerIcon(style),
+                               added: pinned.contains(style), selected: style == selected) {
+                        onPick(style)
                     }
                 }
             }
@@ -737,6 +768,7 @@ private struct PointerPicker: View {
 
 private struct PickerCell: View {
     let style: PointerStyle
+    let icon: NSImage?
     let added: Bool
     let selected: Bool
     let action: () -> Void
@@ -745,7 +777,7 @@ private struct PickerCell: View {
     var body: some View {
         Button(action: action) {
             Group {
-                if let icon = pointerIcon(style) {
+                if let icon {
                     Image(nsImage: icon).resizable().interpolation(.high).frame(width: 42, height: 42)
                 }
             }

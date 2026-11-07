@@ -29,10 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.refreshMenu()
         }
         overlay.extraPassThrough = { [weak self] in
-            guard let frame = self?.statusItem.button?.window?.frame else {
+            guard let self else {
                 return []
             }
-            return [frame]
+            return [self.statusItem?.button?.window?.frame, self.welcome.drawingHelpFrame].compactMap { $0 }
         }
         updater.start()
         setupStatusItem()
@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.action = #selector(statusClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
-        let permission = NSMenuItem(title: "Разрешить универсальный доступ…", action: #selector(showWelcome), keyEquivalent: "")
+        let permission = NSMenuItem(title: "Дать доступ для рисования…", action: #selector(showWelcome), keyEquivalent: "")
         permissionItem = permission
         menu.addItem(permission)
         let toggle = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
@@ -93,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if Updater.isAvailable {
             menu.addItem(NSMenuItem(title: "Проверить обновления…", action: #selector(checkForUpdates), keyEquivalent: ""))
         }
+        menu.addItem(NSMenuItem(title: "Как включить рисование…", action: #selector(showDrawingHelp), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти из PlayPointer", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
@@ -224,6 +225,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func showWelcome() {
         if overlay.mode == .draw { overlay.exit() }
         welcome.show(forDrawing: true)
+    }
+
+    @objc private func showDrawingHelp() {
+        welcome.showDrawingHelp()
     }
 
     @objc private func checkForUpdates() {

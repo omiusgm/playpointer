@@ -8,15 +8,24 @@ struct PointerStyle: Hashable {
     }
 
     init?(rawValue: String) {
-        guard PointerStyle.allCases.contains(where: { $0.rawValue == rawValue }) else {
+        switch rawValue {
+        case "paw", "cat01", "cat02", "cat03", "cat04", "cat05", "cat06", "cat07", "cat08", "cat09", "cat10":
+            self = .catLaser
+            return
+        default:
+            break
+        }
+        guard let style = PointerStyle.allCases.first(where: { $0.rawValue == rawValue }) else {
             return nil
         }
-        self.rawValue = rawValue
+        self = style
     }
 
     static let squeaky = PointerStyle("squeaky")
     static let rocket = PointerStyle("rocket")
-    static let paw = PointerStyle("paw")
+    static let catLaser = PointerStyle("catLaser")
+    static let catChaser = PointerStyle("catChaser")
+    static let catPixel = PointerStyle("catPixel")
     static let lavender = PointerStyle("lavender")
     static let glove = PointerStyle("glove")
     static let coral = PointerStyle("coral")
@@ -25,16 +34,9 @@ struct PointerStyle: Hashable {
     static let laser = PointerStyle("laser")
 
     private static let builtIn: [(id: String, title: String, ink: CGColor)] = [
-        ("cat01", "Серая лапка", Ink.hex(0xD78461)),
-        ("cat02", "Рыжая лапка", Ink.hex(0xD78461)),
-        ("cat03", "Фарфоровая лапка", Ink.hex(0xD78461)),
-        ("cat04", "Чёрная лапка", Ink.hex(0xD78461)),
-        ("cat05", "Тигровая лапка", Ink.hex(0xD78461)),
-        ("cat06", "Клубничная лапка", Ink.hex(0xD78461)),
-        ("cat07", "Лапка-робот", Ink.hex(0xD78461)),
-        ("cat08", "Трёхцветная лапка", Ink.hex(0xD78461)),
-        ("cat09", "Сиамская лапка", Ink.hex(0xD78461)),
-        ("cat10", "Космическая лапка", Ink.hex(0xD78461)),
+        ("catLaser", "Лапка за лазером", Ink.hex(0xD78461)),
+        ("catChaser", "Котик за лазером", Ink.hex(0xD78461)),
+        ("catPixel", "Пиксельный кот", Ink.hex(0xD78461)),
         ("funny01", "Весёлая стрелка", Ink.hex(0x7E79E8)),
         ("funny02", "Милая стрелочка", Ink.hex(0x7E79E8)),
         ("funny03", "Алмазный меч", Ink.hex(0x7E79E8)),
@@ -56,7 +58,6 @@ struct PointerStyle: Hashable {
         ("funny20", "Помни", Ink.hex(0xE74A5A)),
         ("squeaky", "Резиновая игрушка", Ink.hex(0xE67F98)),
         ("rocket", "Карманная ракета", Ink.hex(0x3284B4)),
-        ("paw", "Лапка", Ink.hex(0xD78461)),
         ("lavender", "Лавандовая рука", Ink.purple),
         ("glove", "Перчатка", Ink.purple),
         ("coral", "Коралловая рука", Ink.red),
@@ -111,9 +112,11 @@ struct PointerStyle: Hashable {
         builtInHands + customHands + [.laser]
     }
 
-    static let defaultPinned: [PointerStyle] = [.squeaky, .rocket, .paw, .lavender, .glove, .laser]
+    static let defaultPinned: [PointerStyle] = [.squeaky, .rocket, .catLaser, .lavender, .glove, .laser]
 
     var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" }
+
+    var isCatFollower: Bool { self == .catLaser || self == .catChaser || self == .catPixel }
 
     var isCustom: Bool {
         CustomHands.hand(rawValue) != nil
@@ -138,8 +141,19 @@ struct PointerStyle: Hashable {
         }
         if rawValue == "funny16" { return "hand_funny16_v2" }
         if rawValue == "rocket" { return "hand_rocket_3d" }
-        if rawValue == "paw" { return "hand_paw_3d_v3" }
+        if self == .catLaser { return "hand_cat_laser" }
+        if self == .catChaser { return "hand_cat_chaser" }
+        if self == .catPixel { return "hand_cat_pixel" }
         return "hand_\(rawValue)"
+    }
+
+    var pressedAssetName: String? {
+        switch rawValue {
+        case "funny02", "funny17", "catChaser", "catPixel":
+            return assetName.map { "\($0)_pressed" }
+        default:
+            return nil
+        }
     }
 
     var inkColor: CGColor {
@@ -294,8 +308,13 @@ struct HandAsset {
     }
 
     private static func measure(_ image: CGImage, named name: String) -> HandAsset? {
-        if name == "hand_funny18" || name == "hand_funny19" { return measureStandalone(image) }
-        return measure(image)
+        switch name {
+        case "hand_cat_laser", "hand_cat_chaser", "hand_cat_chaser_pressed",
+             "hand_cat_pixel", "hand_cat_pixel_pressed", "hand_funny18", "hand_funny19":
+            return measureStandalone(image)
+        default:
+            return measure(image)
+        }
     }
 
     // Standalone cursors have no rod; their uppermost opaque pixel is the hotspot.

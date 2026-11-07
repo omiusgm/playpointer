@@ -36,6 +36,19 @@ if let idx = CommandLine.arguments.firstIndex(of: "--toolbar-test") {
             print("rendered \(hintOut)")
         }
     }
+    if CommandLine.arguments.contains("--catalog") {
+        var loaded = false
+        HandAsset.preloadThumbnails(PointerStyle.allCases.compactMap(\.assetName)) { loaded = true }
+        let deadline = Date().addingTimeInterval(8)
+        while !loaded, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        if let data = bar.snapshotCatalog()?.representation(using: .png, properties: [:]) {
+            let catalogOut = out.replacingOccurrences(of: ".png", with: "-catalog.png")
+            try? data.write(to: URL(fileURLWithPath: catalogOut))
+            print("rendered \(catalogOut)")
+        }
+    }
     if CommandLine.arguments.contains("--ink"), let data = bar.snapshotInkTray()?.representation(using: .png, properties: [:]) {
         let trayOut = out.replacingOccurrences(of: ".png", with: "-ink.png")
         try? data.write(to: URL(fileURLWithPath: trayOut))
@@ -99,7 +112,12 @@ if CommandLine.arguments.contains("--asset-test") {
             continue
         }
     }
-    if !failed { print("PASS \(styles.count) cursor assets and hotspot geometry") }
+    let reactions = styles.compactMap(\.pressedAssetName)
+    for name in reactions where HandAsset.load(name) == nil {
+        print("FAIL: \(name) reaction asset")
+        failed = true
+    }
+    if !failed { print("PASS \(styles.count) cursor assets, hotspot geometry and \(reactions.count) reaction frames") }
     exit(failed ? 1 : 0)
 }
 

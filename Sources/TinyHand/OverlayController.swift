@@ -67,6 +67,7 @@ final class OverlayController {
             guard let self = self else {
                 return
             }
+            self.toolbar.closeCatalog()
             self.drawModeButtons.insert(button)
             self.armView.press()
             self.armView.held = true
@@ -100,6 +101,17 @@ final class OverlayController {
             self?.notePassThroughPress(at: location)
         }
 
+        toolbar.onCatalogVisibilityChanged = { [weak self] in
+            guard let self, self.isActive else { return }
+            if self.toolbar.catalogFrame == nil {
+                self.revealUntil = Date().addingTimeInterval(1.5)
+            }
+            // A catalog can close from updateZones; finish that pass before refreshing.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isActive else { return }
+                self.tick()
+            }
+        }
         toolbar.onPick = { [weak self] style in
             self?.pick(style)
         }
@@ -193,7 +205,10 @@ final class OverlayController {
             return
         }
         ownMenuOpen = suspended
-        if suspended { release() }
+        if suspended {
+            toolbar.closeCatalog()
+            release()
+        }
         syncInput()
         if let screen = currentScreen() {
             updateZones(mouse: NSEvent.mouseLocation, screen: screen)
@@ -346,7 +361,8 @@ final class OverlayController {
         let f = toolbar.frame
         let near = f.insetBy(dx: -80, dy: 0).union(f.offsetBy(dx: 0, dy: 90)).insetBy(dx: 0, dy: -10).contains(mouse)
         let drawing = armView.ink.isDrawing
-        toolbar.setRevealed(!drawing && (near || Date() < revealUntil))
+        toolbar.setRevealed(!drawing && (toolbar.catalogFrame != nil || near || Date() < revealUntil))
+        let catalogFrame = toolbar.catalogFrame
 
         let menuLikely = !menuRects.isEmpty || ownMenuOpen || Date() < menuOpeningUntil
             || Date().timeIntervalSince(lastButtonEvent) < 2
@@ -365,7 +381,8 @@ final class OverlayController {
             || inputTap.interactPressing)
         interactHeld = interacting
         menuHover = overMenu
-        let normal = !drawing && !Preferences.interactKeepsHand && (interacting || overMenu || ownMenuOpen)
+        let overCatalog = catalogFrame?.contains(mouse) == true
+        let normal = !drawing && (overCatalog || (!Preferences.interactKeepsHand && (interacting || overMenu || ownMenuOpen)))
         setEscEnabled(menuRects.isEmpty && !ownMenuOpen)
 
         if normal != normalCursor {
@@ -384,13 +401,15 @@ final class OverlayController {
         if toolbar.revealed {
             rects.append(OverlayController.cgRect(f))
         }
+        if let catalogFrame { rects.append(OverlayController.cgRect(catalogFrame)) }
         inputTap.passThroughRects = rects
     }
 
     private func setEscEnabled(_ enabled: Bool) {
         if enabled && isActive && escHotKey == nil {
             escHotKey = HotKeyCenter.shared.register(keyCode: UInt32(kVK_Escape), modifiers: 0) { [weak self] in
-                self?.exit()
+                guard let self, !self.toolbar.closeCatalog() else { return }
+                self.exit()
             }
         }
         if !enabled, let id = escHotKey {
@@ -455,6 +474,7 @@ final class OverlayController {
     }
 
     private func notePassThroughPress(at location: CGPoint) {
+        toolbar.dismissCatalog(outside: OverlayController.cgPoint(location))
         if let screen = currentScreen(), OverlayController.cgRect(OverlayController.menuBarRect(screen)).contains(location) {
             menuOpeningUntil = Date().addingTimeInterval(1)
         }
@@ -465,10 +485,11 @@ final class OverlayController {
         guard isActive, mode == .control, !ownMenuOpen else { return }
         let location = event.cgEvent?.location ?? OverlayController.cgPoint(NSEvent.mouseLocation)
         notePassThroughPress(at: location)
-        if toolbar.revealed && OverlayController.cgRect(toolbar.frame).contains(location) { return }
+        let point = OverlayController.cgPoint(location)
+        if toolbar.catalogFrame?.contains(point) == true || (toolbar.revealed && toolbar.frame.contains(point)) { return }
         armView.press()
         tapSound.play()
-        showWandSparks(at: OverlayController.cgPoint(location))
+        showWandSparks(at: point)
     }
 
     private func showWandSparks(at mouse: CGPoint) {
