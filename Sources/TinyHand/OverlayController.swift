@@ -11,6 +11,7 @@ final class OverlayController {
     private let armView: ArmView
     private let inputTap = InputTap()
     private let tapSound = TapSound()
+    private let clickPulse = ClickPulse()
     private(set) var mode = Preferences.pointerMode
     private var controlMonitors: [Any] = []
     private var drawModeButtons: Set<Int64> = []
@@ -63,7 +64,7 @@ final class OverlayController {
         armView = ArmView(frame: NSRect(origin: .zero, size: frame.size))
         window.contentView = armView
 
-        inputTap.onMouseDown = { [weak self] button, feedback in
+        inputTap.onMouseDown = { [weak self] button, feedback, location in
             guard let self = self else {
                 return
             }
@@ -72,12 +73,12 @@ final class OverlayController {
             self.armView.press()
             self.armView.held = true
             if feedback == .draw {
-                self.tapSound.play()
+                self.tapSound.play(magic: self.armView.isWand)
                 self.toolbar.hideHint()
                 if button == 0 {
                     self.downPoint = self.localMouse()
                 }
-                self.showWandSparks(at: NSEvent.mouseLocation)
+                self.showClickFeedback(at: OverlayController.cgPoint(location), primary: button == 0)
             }
             self.noteButtonEvent()
         }
@@ -113,7 +114,9 @@ final class OverlayController {
             }
         }
         toolbar.onPick = { [weak self] style in
-            self?.pick(style)
+            guard let self else { return }
+            Preferences.recordRecentStyle(style)
+            self.pick(style)
         }
         toolbar.onToggleSound = { [weak self] in
             self?.soundOn.toggle()
@@ -151,6 +154,7 @@ final class OverlayController {
     var onSoundChanged: (() -> Void)?
 
     func pick(_ style: PointerStyle) {
+        clickPulse.clear()
         armView.setStyle(style)
         PointerStyle.saved = armView.style
         toolbar.select(armView.style)
@@ -224,6 +228,7 @@ final class OverlayController {
         drawModeButtons.removeAll()
         armView.held = false
         armView.clearPointerEffects()
+        clickPulse.clear()
         endStroke()
     }
 
@@ -389,6 +394,7 @@ final class OverlayController {
             normalCursor = normal
             armView.pointerHidden = normal
             if normal {
+                clickPulse.clear()
                 CursorHider.show()
             } else {
                 CursorHider.hide()
@@ -488,15 +494,20 @@ final class OverlayController {
         let point = OverlayController.cgPoint(location)
         if toolbar.catalogFrame?.contains(point) == true || (toolbar.revealed && toolbar.frame.contains(point)) { return }
         armView.press()
-        tapSound.play()
-        showWandSparks(at: point)
+        tapSound.play(magic: armView.isWand)
+        showClickFeedback(at: point, primary: event.type == .leftMouseDown)
     }
 
-    private func showWandSparks(at mouse: CGPoint) {
-        guard isActive, armView.isWand else { return }
+    private func showClickFeedback(at mouse: CGPoint, primary: Bool) {
+        guard isActive, primary || armView.isWand else { return }
         if currentFrame?.contains(mouse) != true { tick() }
-        guard let frame = currentFrame, frame.contains(mouse) else { return }
-        armView.showWandSparks(at: CGPoint(x: mouse.x - frame.minX, y: mouse.y - frame.minY))
+        guard !armView.pointerHidden, let frame = currentFrame, frame.contains(mouse) else { return }
+        let point = CGPoint(x: mouse.x - frame.minX, y: mouse.y - frame.minY)
+        if armView.isWand {
+            armView.showWandSparks(at: point)
+        } else if let layer = armView.layer {
+            clickPulse.show(at: point, color: armView.style.inkColor, in: layer)
+        }
     }
 
     func runClickTest() {

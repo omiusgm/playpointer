@@ -17,14 +17,19 @@ final class WelcomeWindow: NSObject {
     private var window: Card?
     private var drawingHelp: Card?
     private var timer: Timer?
-    private var askedAt: Date?
     private var forDrawing = false
     private var tapUnavailable = false
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(wrappingLabelWithString: "")
     private let button = NSButton(title: "", target: nil, action: nil)
     private let helpButton = NSButton(title: "Как дать доступ?", target: nil, action: nil)
-    private let tip = NSTextField(wrappingLabelWithString: "Уже включено? Удалите PlayPointer из списка и добавьте снова.")
+    private static let cardSize = CGSize(width: 340, height: 300)
+    private static let drawingRecovery = """
+        После обновления PlayPointer в списке может остаться разрешение прежней версии. Выберите PlayPointer в списке и нажмите «−». \
+        Нажмите «+», добавьте PlayPointer из папки «Программы» и включите доступ. Если карточка не обновилась, выйдите из PlayPointer, \
+        откройте его снова и выберите «Рисование». Нажмите «Начать рисовать».
+        """
+    private let tip = NSTextField(wrappingLabelWithString: "Переключатель уже включён?\n\(WelcomeWindow.drawingRecovery)")
 
     static let shownKey = "welcomeShown"
 
@@ -35,7 +40,6 @@ final class WelcomeWindow: NSObject {
     func show(forDrawing: Bool = false) {
         self.forDrawing = forDrawing
         tapUnavailable = false
-        askedAt = nil
         if window == nil {
             build()
         }
@@ -61,20 +65,31 @@ final class WelcomeWindow: NSObject {
     private func refresh() {
         if forDrawing {
             let trusted = granted
-            let ready = trusted && !tapUnavailable
-            title.stringValue = ready ? "Можно рисовать" : "Доступ для рисования"
-            subtitle.stringValue = ready
-                ? "Рисуйте поверх открытых окон."
-                : "Разрешите PlayPointer обрабатывать нажатия мыши для рисования."
-            button.title = ready ? "Начать рисовать" : "Открыть настройки"
-            helpButton.isHidden = ready
-            tip.isHidden = !tapUnavailable && (trusted || (askedAt.map { Date().timeIntervalSince($0) < 10 } ?? true))
+            if !trusted {
+                title.stringValue = "Доступ для рисования"
+                subtitle.stringValue = "Разрешите PlayPointer обрабатывать нажатия мыши для рисования."
+                button.title = "Открыть настройки"
+            } else if tapUnavailable {
+                title.stringValue = "Не удалось начать рисовать"
+                subtitle.stringValue = "Доступ есть, но PlayPointer не смог перехватить нажатия мыши."
+                button.title = "Повторить"
+            } else {
+                title.stringValue = "Можно рисовать"
+                subtitle.stringValue = "Рисуйте поверх открытых окон."
+                button.title = "Начать рисовать"
+            }
+            helpButton.isHidden = trusted
+            tip.isHidden = trusted
         } else {
             title.stringValue = "Всё готово"
             subtitle.stringValue = "Нажмите \(Preferences.toggleShortcut.localizedDisplay), чтобы включить указатель."
             button.title = "Попробовать"
             helpButton.isHidden = true
             tip.isHidden = true
+        }
+        let height: CGFloat = tip.isHidden ? Self.cardSize.height : 436
+        if let window, window.frame.height != height {
+            window.setContentSize(CGSize(width: Self.cardSize.width, height: height))
         }
     }
 
@@ -84,7 +99,7 @@ final class WelcomeWindow: NSObject {
             onTryIt?()
             return
         }
-        if granted && !tapUnavailable {
+        if granted {
             if onTryDrawing?() == true {
                 close()
             } else {
@@ -94,7 +109,6 @@ final class WelcomeWindow: NSObject {
             return
         }
         tapUnavailable = false
-        askedAt = Date()
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
         Self.openDrawingSettings()
@@ -103,7 +117,7 @@ final class WelcomeWindow: NSObject {
     static func openDrawingSettings() {
         let privacySettings = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
         let destination = usesDeviceAccessSettings
-            ? privacySettings
+            ? "\(privacySettings)?Privacy_Accessibility"
             : "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         if let url = URL(string: destination), NSWorkspace.shared.open(url) { return }
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
@@ -135,9 +149,9 @@ final class WelcomeWindow: NSObject {
         let contentWidth = width - 2 * inset
         let pane = Self.usesDeviceAccessSettings ? "Управление устройством и доступ к данным" : "Универсальный доступ"
         let steps = [
-            "В Системных настройках выберите «Конфиденциальность и безопасность», затем откройте «\(pane)» внутри этого раздела.",
+            "В Системных настройках откройте «Конфиденциальность и безопасность» → «\(pane)».",
             "Включите переключатель рядом с PlayPointer. Если приложения нет в списке, нажмите «Добавить» (+) и выберите PlayPointer в папке «Программы».",
-            "Вернитесь в PlayPointer. Нажмите правой кнопкой на его значок в строке меню и выберите «Режим указателя» → «Рисование»."
+            "Нажмите правой кнопкой на значок PlayPointer в строке меню и выберите «Режим указателя» → «Рисование». Если открылась карточка доступа, нажмите «Начать рисовать»."
         ]
 
         func label(_ text: String, width: CGFloat) -> NSTextField {
@@ -158,14 +172,21 @@ final class WelcomeWindow: NSObject {
             return row
         }
 
+        let recoveryHeading = label("Переключатель уже включён?", width: contentWidth)
+        recoveryHeading.font = .systemFont(ofSize: 13, weight: .semibold)
+        let recovery = label(Self.drawingRecovery, width: contentWidth)
         let note = label("Режим «Управление» работает без этого разрешения.", width: contentWidth)
         note.textColor = .secondaryLabelColor
         let stack = NSStackView(views: rows)
+        stack.addArrangedSubview(recoveryHeading)
+        stack.addArrangedSubview(recovery)
         stack.addArrangedSubview(note)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         stack.setCustomSpacing(16, after: rows[2])
+        stack.setCustomSpacing(4, after: recoveryHeading)
+        stack.setCustomSpacing(16, after: recovery)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let settings = NSButton(title: "Открыть настройки", target: self, action: #selector(openSettingsFromHelp))
@@ -196,7 +217,7 @@ final class WelcomeWindow: NSObject {
     }
 
     private func build() {
-        let size = CGSize(width: 340, height: 300)
+        let size = Self.cardSize
         let messageWidth = size.width - 52
         let w = Card(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         w.isOpaque = false
@@ -240,9 +261,8 @@ final class WelcomeWindow: NSObject {
         helpButton.bezelStyle = .rounded
         helpButton.controlSize = .small
 
-        tip.font = NSFont.systemFont(ofSize: 11)
-        tip.textColor = .secondaryLabelColor
-        tip.alignment = .center
+        tip.font = NSFont.systemFont(ofSize: 12)
+        tip.alignment = .left
         tip.preferredMaxLayoutWidth = messageWidth
         tip.widthAnchor.constraint(equalToConstant: messageWidth).isActive = true
 
@@ -278,7 +298,6 @@ final class WelcomeWindow: NSObject {
         }
         if simulateUntrusted {
             forDrawing = true
-            askedAt = Date().addingTimeInterval(-20)
         }
         refresh()
         guard let view = window?.contentView else {

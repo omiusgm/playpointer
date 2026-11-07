@@ -43,7 +43,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 final class SettingsModel: ObservableObject {
     @Published var section: SettingsSection = .general
-    @Published var pinMessage: String?
     @Published private var revision = 0
 
     var applyToggleShortcut: ((Shortcut) -> Bool)?
@@ -145,14 +144,7 @@ final class SettingsModel: ObservableObject {
             if let name = style.assetName {
                 _ = HandAsset.thumbnail(name)
             }
-            var pinned = Preferences.pinnedStyles
-            if pinned.count < Preferences.maxPinned {
-                pinned.insert(style, at: max(0, pinned.count - (pinned.last == .laser ? 1 : 0)))
-                Preferences.pinnedStyles = pinned
-                handMessage = "«\(style.title)» добавлено на панель."
-            } else {
-                handMessage = "Готово. Нажмите на «\(style.title)», чтобы добавить на панель."
-            }
+            handMessage = "«\(style.title)» выбран."
             selectPointer(style)
             self.draft = nil
             handIdea = ""
@@ -164,12 +156,12 @@ final class SettingsModel: ObservableObject {
 
     func selectPointer(_ style: PointerStyle) {
         PointerStyle.saved = style
-        NotificationCenter.default.post(name: Preferences.changed, object: nil)
+        if !Preferences.recordRecentStyle(style) {
+            NotificationCenter.default.post(name: Preferences.changed, object: nil)
+        }
     }
 
     func removeHand(_ style: PointerStyle) {
-        let pinned = Preferences.pinnedStyles.filter { $0 != style }
-        Preferences.pinnedStyles = pinned.isEmpty ? PointerStyle.defaultPinned : pinned
         if PointerStyle.saved == style {
             PointerStyle.saved = .lavender
         }
@@ -207,47 +199,10 @@ final class SettingsModel: ObservableObject {
         previewSound?.play()
     }
 
-    @Published var dragging: PointerStyle?
-    @Published private var draftOrder: [PointerStyle]?
-
-    var pinnedOrder: [PointerStyle] {
-        draftOrder ?? Preferences.pinnedStyles
-    }
-
-    private(set) var baseOrder: [PointerStyle] = []
-
-    func beginDrag(_ style: PointerStyle) {
-        dragging = style
-        baseOrder = Preferences.pinnedStyles
-        draftOrder = baseOrder
-        pinMessage = nil
-    }
-
-    func setDraft(_ order: [PointerStyle]) {
-        guard order != draftOrder else {
-            return
-        }
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            draftOrder = order
-        }
-    }
-
-    func cancelDrag() {
-        draftOrder = nil
-        dragging = nil
-    }
-
-    func resetToolbar() {
-        pinMessage = nil
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            Preferences.pinnedStyles = PointerStyle.defaultPinned
-        }
-    }
-
     func resetAll() {
         let alert = NSAlert()
         alert.messageText = "Сбросить настройки?"
-        alert.informativeText = "Будут восстановлены исходные сочетания клавиш, набор указателей и параметры внешнего вида, рисования и звука. Автозапуск и разрешение универсального доступа сохранятся."
+        alert.informativeText = "Будут восстановлены исходные сочетания клавиш и параметры внешнего вида, рисования и звука. Автозапуск и разрешение универсального доступа сохранятся."
         alert.addButton(withTitle: "Сбросить")
         alert.addButton(withTitle: "Отмена")
         guard alert.runModal() == .alertFirstButtonReturn else {
@@ -257,61 +212,7 @@ final class SettingsModel: ObservableObject {
         _ = applyToggleShortcut?(.toggleDefault)
         _ = applyClearShortcut?(.clearDefault)
         shortcutError = nil
-        pinMessage = nil
         revision += 1
-    }
-
-    func endDrag() {
-        if let order = draftOrder {
-            Preferences.pinnedStyles = order
-        }
-        draftOrder = nil
-        dragging = nil
-    }
-
-    func pin(_ style: PointerStyle) {
-        var pinned = Preferences.pinnedStyles
-        if pinned.contains(style) {
-            unpin(style)
-            return
-        }
-        if pinned.count >= Preferences.maxPinned {
-            pinMessage = "Освободите место на панели, чтобы добавить «\(style.title)»."
-            return
-        }
-        pinned.append(style)
-        pinMessage = nil
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            Preferences.pinnedStyles = pinned
-        }
-    }
-
-    func swap(_ old: PointerStyle, for new: PointerStyle) {
-        var pinned = Preferences.pinnedStyles
-        guard let i = pinned.firstIndex(of: old), !pinned.contains(new) else {
-            return
-        }
-        pinned[i] = new
-        pinMessage = nil
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            Preferences.pinnedStyles = pinned
-        }
-    }
-
-    func unpin(_ style: PointerStyle) {
-        var pinned = Preferences.pinnedStyles
-        guard let i = pinned.firstIndex(of: style) else {
-            return
-        }
-        if pinned.count == 1 {
-            pinMessage = "На панели должен остаться хотя бы один указатель."
-            return
-        }
-        pinned.remove(at: i)
-        pinMessage = nil
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-            Preferences.pinnedStyles = pinned
-        }
     }
 
 }
@@ -483,246 +384,41 @@ private struct GeneralPage: View {
 
 private struct PointersPage: View {
     @ObservedObject var model: SettingsModel
-    @State private var rowFrame: CGRect = .zero
-    @State private var dragX: CGFloat = 0
-    @State private var dragStart = 0
-    @State private var floating: Floating?
     @State private var choosingPointer = false
-    @State private var addingToToolbar = false
-
-    struct Floating {
-        let style: PointerStyle
-        let point: CGPoint
-        let badge: String?
-    }
-
-    private var step: CGFloat {
-        (rowFrame.width - 20 + 6) / CGFloat(Preferences.maxPinned)
-    }
-
-    private func overRow(_ p: CGPoint) -> Bool {
-        rowFrame.insetBy(dx: -16, dy: -28).contains(p)
-    }
-
-    private func slot(at x: CGFloat, count: Int) -> Int {
-        min(max(Int((x - rowFrame.minX - 10) / step), 0), max(0, count - 1))
-    }
-
-    private func rowDrag(_ value: DragGesture.Value) {
-        let start = CGPoint(x: rowFrame.minX + value.startLocation.x, y: rowFrame.minY + value.startLocation.y)
-        let p = CGPoint(x: rowFrame.minX + value.location.x, y: rowFrame.minY + value.location.y)
-        if model.dragging == nil {
-            let base = Preferences.pinnedStyles
-            let i = Int((start.x - rowFrame.minX - 10) / step)
-            guard start.x >= rowFrame.minX + 10, base.indices.contains(i) else {
-                return
-            }
-            dragStart = i
-            model.beginDrag(base[i])
-        }
-        guard let style = model.dragging else {
-            return
-        }
-        var order = model.baseOrder.filter { $0 != style }
-        if overRow(p) {
-            dragX = value.translation.width
-            order.insert(style, at: slot(at: p.x, count: order.count + 1))
-            floating = nil
-        } else if model.baseOrder.count > 1 {
-            floating = Floating(style: style, point: p, badge: "minus.circle.fill")
-        } else {
-            order = model.baseOrder
-            floating = Floating(style: style, point: p, badge: nil)
-        }
-        model.setDraft(order)
-    }
-
-    private func dropDrag() {
-        let removing = floating?.badge == "minus.circle.fill"
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            dragX = 0
-            if floating != nil && !removing {
-                model.cancelDrag()
-                model.pinMessage = "На панели должен остаться хотя бы один указатель."
-            } else {
-                model.endDrag()
-            }
-            floating = nil
-        }
-    }
-
-    private func offset(_ style: PointerStyle) -> CGFloat {
-        guard model.dragging == style, floating == nil, let i = model.pinnedOrder.firstIndex(of: style) else {
-            return 0
-        }
-        return dragX - CGFloat(i - dragStart) * step
-    }
 
     var body: some View {
-        let pinned = model.pinnedOrder
-        let full = Preferences.pinnedStyles.count >= Preferences.maxPinned
-        VStack(alignment: .leading, spacing: 30) {
+        VStack(alignment: .leading, spacing: 24) {
             Card(title: nil) {
                 Row("Текущий указатель", detail: PointerStyle.saved.title) {
                     PillButton(title: "Выбрать указатель…") { choosingPointer = true }
                         .popover(isPresented: $choosingPointer, arrowEdge: .bottom) {
-                            PointerPicker(model: model, purpose: .select) { choosingPointer = false }
+                            PointerCatalog(selected: PointerStyle.saved) { style in
+                                model.selectPointer(style)
+                                choosingPointer = false
+                            }
                         }
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("На панели")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    TextButton(title: "Сбросить") { model.resetToolbar() }
-                }
-                .padding(.horizontal, 4)
-                HStack(spacing: 6) {
-                    ForEach(pinned, id: \.self) { style in
-                        let lifted = model.dragging == style
-                        ToolbarSlot(style: style, model: model, lifted: lifted)
-                            .offset(x: offset(style))
-                            .zIndex(lifted ? 1 : 0)
-                            .transaction { if lifted { $0.animation = nil } }
-                    }
-                    if !full {
-                        AddSlot(open: $addingToToolbar)
-                            .popover(isPresented: $addingToToolbar, arrowEdge: .bottom) {
-                                PointerPicker(model: model, purpose: .pin) { addingToToolbar = false }
-                            }
-                    }
-                    ForEach(0..<max(0, Preferences.maxPinned - pinned.count - 1), id: \.self) { _ in
-                        EmptySlot()
-                    }
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.primary.opacity(0.045))
-                )
-                .background(GeometryReader { g in
-                    Color.clear
-                        .onAppear { rowFrame = g.frame(in: .named("pointersPage")) }
-                        .onChange(of: g.frame(in: .named("pointersPage"))) { rowFrame = $0 }
-                })
-                .coordinateSpace(name: "toolbarRow")
-                .gesture(
-                    DragGesture(minimumDistance: 3, coordinateSpace: .named("toolbarRow"))
-                        .onChanged { rowDrag($0) }
-                        .onEnded { _ in dropDrag() }
-                )
-                Text(full
-                     ? "Освободите место на панели, чтобы закрепить новый указатель. Значки можно переставлять."
-                     : "Кнопка + закрепляет указатель. Перетащите значок для перестановки или вынесите его за пределы панели.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 4)
-                if let message = model.pinMessage {
-                    Text(message).font(.system(size: 12)).foregroundColor(.red).padding(.horizontal, 4)
-                }
-            }
+            Text("На нижней панели сначала идут недавние указатели. Прокрутите ряд двумя пальцами или нажмите «+», чтобы увидеть остальные.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             YourHands(model: model)
         }
-        .coordinateSpace(name: "pointersPage")
-        .overlay(alignment: .topLeading) {
-            if let f = floating {
-                FloatingPointer(style: f.style, badge: f.badge)
-                    .position(f.point)
-                    .allowsHitTesting(false)
-            }
-        }
     }
 }
 
-private struct AddSlot: View {
-    @Binding var open: Bool
-    @State private var hovering = false
-
-    var body: some View {
-        Button {
-            open.toggle()
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(hovering || open ? .primary : .secondary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 58)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.primary.opacity(hovering || open ? 0.09 : 0.05))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.16), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .help("Закрепить указатель")
-        .onHover { hovering = $0 }
-    }
-}
-
-private struct PointerPicker: View {
-    enum Purpose {
-        case select, pin
-    }
-
-    @ObservedObject var model: SettingsModel
-    let purpose: Purpose
-    let done: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PointerCatalog(
-                selected: purpose == .select ? PointerStyle.saved : nil,
-                pinned: purpose == .pin ? Set(Preferences.pinnedStyles) : []
-            ) { style in
-                switch purpose {
-                case .select: model.selectPointer(style)
-                case .pin: model.pin(style)
-                }
-                done()
-            }
-            if purpose == .pin {
-                Divider()
-                Button {
-                    done()
-                    model.startMakingHand()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "wand.and.stars").font(.system(size: 11))
-                        Text("Создать свою руку…").font(.system(size: 12))
-                        Spacer()
-                    }
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusable(false)
-            }
-        }
-        .frame(width: 400)
-    }
-}
-
-/// Shared scrollable pointer catalog. Pinned styles are unavailable for selection.
+/// Shared scrollable pointer catalog.
 struct PointerCatalog: View {
     let selected: PointerStyle?
-    var pinned: Set<PointerStyle> = []
     var width: CGFloat = 400
     var height: CGFloat = 340
     let onPick: (PointerStyle) -> Void
     @State private var thumbnails: [PointerStyle: NSImage] = [:]
     private let columns = [GridItem(.adaptive(minimum: 64, maximum: 72), spacing: 4)]
 
-    init(selected: PointerStyle?, pinned: Set<PointerStyle> = [], width: CGFloat = 400, height: CGFloat = 340, onPick: @escaping (PointerStyle) -> Void) {
+    init(selected: PointerStyle?, width: CGFloat = 400, height: CGFloat = 340, onPick: @escaping (PointerStyle) -> Void) {
         self.selected = selected
-        self.pinned = pinned
         self.width = width
         self.height = height
         self.onPick = onPick
@@ -757,7 +453,7 @@ struct PointerCatalog: View {
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(styles, id: \.self) { style in
                     PickerCell(style: style, icon: thumbnails[style] ?? pointerIcon(style),
-                               added: pinned.contains(style), selected: style == selected) {
+                               selected: style == selected) {
                         onPick(style)
                     }
                 }
@@ -769,7 +465,6 @@ struct PointerCatalog: View {
 private struct PickerCell: View {
     let style: PointerStyle
     let icon: NSImage?
-    let added: Bool
     let selected: Bool
     let action: () -> Void
     @State private var hovering = false
@@ -784,17 +479,15 @@ private struct PickerCell: View {
             .frame(width: 62, height: 58)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(hovering && !added ? 0.08 : 0))
+                    .fill(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(hovering ? 0.08 : 0))
             )
-            .opacity(added ? 0.35 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .disabled(added)
         .accessibilityLabel(style.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .help(added ? "«\(style.title)» уже на панели" : style.title)
+        .help(style.title)
         .onHover { hovering = $0 }
     }
 }
@@ -834,17 +527,22 @@ private struct YourHands: View {
 private struct CustomHandChip: View {
     let style: PointerStyle
     @ObservedObject var model: SettingsModel
-    @State private var hovering = false
-    @State private var swapping = false
 
     var body: some View {
-        let pinned = Preferences.pinnedStyles.contains(style)
-        let full = Preferences.pinnedStyles.count >= Preferences.maxPinned
         HStack(spacing: 6) {
-            if let icon = pointerIcon(style) {
-                Image(nsImage: icon).resizable().interpolation(.high).frame(width: 24, height: 24)
+            Button {
+                model.selectPointer(style)
+            } label: {
+                HStack(spacing: 6) {
+                    if let icon = pointerIcon(style) {
+                        Image(nsImage: icon).resizable().interpolation(.high).frame(width: 24, height: 24)
+                    }
+                    Text(style.title).font(.system(size: 12)).lineLimit(1)
+                }
             }
-            Text(style.title).font(.system(size: 12)).lineLimit(1)
+            .buttonStyle(.plain)
+            .help("Выбрать «\(style.title)»")
+
             Button {
                 model.removeHand(style)
             } label: {
@@ -852,151 +550,13 @@ private struct CustomHandChip: View {
                     .font(.system(size: 8, weight: .bold))
                     .foregroundColor(.secondary)
                     .frame(width: 16, height: 16)
-                    .background(Circle().fill(Color.primary.opacity(hovering ? 0.12 : 0)))
             }
             .buttonStyle(.plain)
-            .focusable(false)
-            .opacity(hovering ? 1 : 0)
             .help("Удалить «\(style.title)»")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
-        .background(Capsule().fill(Color.primary.opacity(hovering && !pinned ? 0.09 : 0.05)))
-        .contentShape(Capsule())
-        .onTapGesture {
-            guard !pinned else {
-                return
-            }
-            if full {
-                swapping = true
-            } else {
-                model.pin(style)
-            }
-        }
-        .onHover { hovering = $0 }
-        .help(pinned ? "«\(style.title)» на панели" : "Добавить «\(style.title)» на панель")
-        .popover(isPresented: $swapping, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Панель заполнена. Выберите, что заменить на «\(style.title)».")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                HStack(spacing: 4) {
-                    ForEach(Preferences.pinnedStyles, id: \.self) { old in
-                        SwapCell(style: old) {
-                            model.swap(old, for: style)
-                            swapping = false
-                        }
-                    }
-                }
-            }
-            .padding(12)
-        }
-    }
-}
-
-private struct SwapCell: View {
-    let style: PointerStyle
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Group {
-                if let icon = pointerIcon(style) {
-                    Image(nsImage: icon).resizable().interpolation(.high).frame(width: 32, height: 32)
-                }
-            }
-            .frame(width: 44, height: 44)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(hovering ? 0.1 : 0.04)))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .help("Заменить «\(style.title)»")
-        .onHover { hovering = $0 }
-    }
-}
-private struct FloatingPointer: View {
-    let style: PointerStyle
-    let badge: String?
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Group {
-                if let icon = pointerIcon(style) {
-                    Image(nsImage: icon).resizable().interpolation(.high).frame(width: 40, height: 40)
-                }
-            }
-            .frame(width: 58, height: 58)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.95))
-                    .shadow(color: .black.opacity(0.25), radius: 12, y: 5)
-            )
-            if let badge = badge {
-                Image(systemName: badge)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white, badge == "nosign" ? Color.gray : Color.red)
-                    .offset(x: 6, y: -6)
-            }
-        }
-        .scaleEffect(1.06)
-    }
-}
-
-private struct ToolbarSlot: View {
-    let style: PointerStyle
-    @ObservedObject var model: SettingsModel
-    let lifted: Bool
-    @State private var hovering = false
-
-    var body: some View {
-        slot
-    }
-
-    private var slot: some View {
-        ZStack(alignment: .topTrailing) {
-            Group {
-                if let icon = pointerIcon(style) {
-                    Image(nsImage: icon).resizable().interpolation(.high).frame(width: 40, height: 40)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 58)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.95))
-                    .shadow(color: .black.opacity(lifted ? 0.22 : 0.08), radius: lifted ? 10 : 2, y: lifted ? 4 : 1)
-            )
-            .scaleEffect(lifted ? 1.06 : 1)
-            if hovering && model.dragging == nil {
-                Button {
-                    model.unpin(style)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 16, height: 16)
-                        .background(Circle().fill(Color.black.opacity(0.55)))
-                }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .help("Убрать с панели")
-                .offset(x: 5, y: -5)
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .help(style.title)
-    }
-}
-
-private struct EmptySlot: View {
-    var body: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color.primary.opacity(0.035))
-            .frame(maxWidth: .infinity)
-            .frame(height: 58)
+        .background(Capsule().fill(Color.primary.opacity(PointerStyle.saved == style ? 0.13 : 0.05)))
     }
 }
 

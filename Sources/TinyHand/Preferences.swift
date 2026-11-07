@@ -180,6 +180,23 @@ enum Preferences {
         set { set(newValue.map(\.rawValue), "pinnedStyles") }
     }
 
+    private static let recentStylesKey = "recentStyles"
+
+    static var recentStyles: [PointerStyle] {
+        var seen = Set<PointerStyle>()
+        return (defaults.stringArray(forKey: recentStylesKey) ?? [])
+            .compactMap(PointerStyle.init(rawValue:))
+            .filter { seen.insert($0).inserted }
+    }
+
+    @discardableResult
+    static func recordRecentStyle(_ style: PointerStyle) -> Bool {
+        let recent = recentStyles
+        guard recent.first != style else { return false }
+        set(([style] + recent.filter { $0 != style }).map(\.rawValue), recentStylesKey)
+        return true
+    }
+
     static var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set {
@@ -199,13 +216,13 @@ enum Preferences {
     static func resetAll() {
         for key in ["shortcut.toggle", "shortcut.clear", "pointerSize", "showShadow", "fadeSeconds",
                     "sound.hands", "sound.laser", "interactKey", "interactKeepsHand", "pinnedStyles", "pointerStyle",
-                    "inkChoice", "showInkButton", "tapSound", "pointerMode"] {
+                    "inkChoice", "showInkButton", "tapSound", "pointerMode", recentStylesKey] {
             defaults.removeObject(forKey: key)
         }
         NotificationCenter.default.post(name: changed, object: nil)
     }
 
-        private static func set(_ value: Any, _ key: String) {
+    private static func set(_ value: Any, _ key: String) {
         defaults.set(value, forKey: key)
         NotificationCenter.default.post(name: changed, object: nil)
     }

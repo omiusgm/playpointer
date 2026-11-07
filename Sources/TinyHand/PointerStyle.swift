@@ -27,6 +27,7 @@ struct PointerStyle: Hashable {
     static let catChaser = PointerStyle("catChaser")
     static let catPixel = PointerStyle("catPixel")
     static let catFish = PointerStyle("catFish")
+    static let nyanFlight = PointerStyle("funny21")
     static let lavender = PointerStyle("lavender")
     static let glove = PointerStyle("glove")
     static let coral = PointerStyle("coral")
@@ -50,6 +51,7 @@ struct PointerStyle: Hashable {
         ("funny09", "Мышь-космонавт", Ink.hex(0x7E79E8)),
         ("funny10", "Волшебная палочка", Ink.hex(0x7E79E8)),
         ("funny11", "Nyan Cat", Ink.hex(0x7E79E8)),
+        ("funny21", "Летящий Nyan Cat", Ink.hex(0x7E79E8)),
         ("funny12", "Космическое зелье", Ink.hex(0x7E79E8)),
         ("funny13", "Северное сияние", Ink.hex(0x7E79E8)),
         ("funny14", "Six Seven", Ink.hex(0x7E79E8)),
@@ -116,7 +118,7 @@ struct PointerStyle: Hashable {
 
     static let defaultPinned: [PointerStyle] = [.squeaky, .rocket, .catLaser, .lavender, .glove, .laser]
 
-    var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" }
+    var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" || self == .nyanFlight }
 
     var isCatFollower: Bool { self == .catLaser || self == .catChaser || self == .catPixel || self == .catFish }
 
@@ -141,12 +143,15 @@ struct PointerStyle: Hashable {
         if isCustom {
             return rawValue
         }
+        if rawValue == "funny07" { return "hand_pizza_clean" }
+        if rawValue == "funny10" { return "hand_wand_v2" }
         if rawValue == "funny16" { return "hand_funny16_v2" }
         if rawValue == "rocket" { return "hand_rocket_3d" }
         if self == .catLaser { return "hand_cat_laser" }
         if self == .catChaser { return "hand_cat_chaser" }
         if self == .catPixel { return "hand_cat_pixel" }
         if self == .catFish { return "hand_cat_fish" }
+        if self == .nyanFlight { return "hand_nyan_flight" }
         return "hand_\(rawValue)"
     }
 
@@ -314,8 +319,11 @@ struct HandAsset {
         switch name {
         case "hand_cat_laser", "hand_cat_chaser", "hand_cat_chaser_pressed",
              "hand_cat_pixel", "hand_cat_pixel_pressed", "hand_cat_fish", "hand_cat_fish_pressed",
-             "hand_funny18", "hand_funny19":
+             "hand_funny18", "hand_funny19", "hand_nyan_flight":
             return measureStandalone(image)
+        case "hand_wand_v2":
+            // The wooden handle starts just below the gold ring.
+            return measure(image, fixedWristFraction: 0.612)
         default:
             return measure(image)
         }
@@ -349,7 +357,7 @@ struct HandAsset {
                          handMinX: CGFloat(minX) / wf, handMaxX: CGFloat(maxX + 1) / wf)
     }
 
-    private static func measure(_ image: CGImage) -> HandAsset? {
+    private static func measure(_ image: CGImage, fixedWristFraction: CGFloat? = nil) -> HandAsset? {
         let w = image.width
         let h = image.height
         var alpha = [UInt8](repeating: 0, count: w * h)
@@ -381,21 +389,30 @@ struct HandAsset {
         }
 
         let counts = (0..<h).map(count)
-        guard let top = counts.firstIndex(where: { $0 > 0 }) else {
+        guard let top = counts.firstIndex(where: { $0 > 0 }),
+              let lastRow = counts.lastIndex(where: { $0 > 0 }) else {
             return nil
         }
-        let searchEnd = min(h, top + Int(0.45 * Double(h)))
-        let maxW = counts[top..<searchEnd].max() ?? 0
-        guard maxW > 0,
-              let fist = (top..<h).first(where: { Double(counts[$0]) > 0.6 * Double(maxW) }),
-              let wrist = (fist..<h).first(where: { Double(counts[$0]) < 0.35 * Double(maxW) }) else {
-            return nil
+        let wrist: Int
+        let rodEnd: Int
+        if let fixedWristFraction {
+            wrist = Int((fixedWristFraction * CGFloat(h)).rounded())
+            guard wrist > top, wrist < lastRow else { return nil }
+            rodEnd = lastRow + 1
+        } else {
+            let searchEnd = min(h, top + Int(0.45 * Double(h)))
+            let maxW = counts[top..<searchEnd].max() ?? 0
+            guard maxW > 0,
+                  let fist = (top..<h).first(where: { Double(counts[$0]) > 0.6 * Double(maxW) }),
+                  let measuredWrist = (fist..<h).first(where: { Double(counts[$0]) < 0.35 * Double(maxW) }) else {
+                return nil
+            }
+            wrist = measuredWrist
+            let rodW = counts[min(h - 1, wrist + h / 50)]
+            let from = min(h - 1, wrist + h / 33)
+            let handle = (from..<h).first(where: { Double(counts[$0]) > 1.8 * Double(rodW) })
+            rodEnd = handle ?? lastRow
         }
-        let rodW = counts[min(h - 1, wrist + h / 50)]
-        let lastRow = counts.lastIndex(where: { $0 > 0 }) ?? (h - 1)
-        let from = min(h - 1, wrist + h / 33)
-        let handle = (from..<h).first(where: { Double(counts[$0]) > 1.8 * Double(rodW) })
-        let rodEnd = handle ?? lastRow
 
         var minX = w
         var maxX = 0
@@ -408,14 +425,16 @@ struct HandAsset {
         }
 
         let fh = CGFloat(h)
+        let tipY = fixedWristFraction == nil ? CGFloat(top) : CGFloat(top) + 0.5
+        let tipX = fixedWristFraction == nil ? center(min(h - 1, top + h / 200)) : center(top) + 0.5 / CGFloat(w)
         return HandAsset(
             image: image,
             aspect: CGFloat(w) / fh,
             handTop: max(0, CGFloat(top) - 0.004 * fh) / fh,
-            tip: CGFloat(top) / fh,
+            tip: tipY / fh,
             wrist: CGFloat(wrist) / fh,
             rodEnd: CGFloat(rodEnd) / fh,
-            tipX: center(min(h - 1, top + h / 200)),
+            tipX: tipX,
             rodX: center((wrist + rodEnd) / 2),
             handMinX: CGFloat(minX) / CGFloat(w),
             handMaxX: CGFloat(maxX) / CGFloat(w)

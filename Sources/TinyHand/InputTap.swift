@@ -5,7 +5,7 @@ final class InputTap {
         case draw, interact
     }
 
-    var onMouseDown: ((Int64, Feedback) -> Void)?
+    var onMouseDown: ((Int64, Feedback, CGPoint) -> Void)?
     var onMouseUp: ((Int64, Feedback) -> Void)?
     var onLeftDragged: (() -> Void)?
     var onPassThroughPress: ((CGPoint) -> Void)?
@@ -179,11 +179,11 @@ final class InputTap {
                 if !key.isEmpty && (event.flags.contains(key) || CGEventSource.flagsState(.hidSystemState).contains(key)) {
                     presses[button] = Press(route: .interact(key), generation: generation)
                     event.flags.remove(key)
-                    notify(generation) { $0.onMouseDown?(button, .interact) }
+                    notify(generation) { $0.onMouseDown?(button, .interact, location) }
                     return forwarded
                 }
                 presses[button] = Press(route: .draw, generation: generation)
-                notify(generation) { $0.onMouseDown?(button, .draw) }
+                notify(generation) { $0.onMouseDown?(button, .draw, location) }
                 return nil
 
             case .leftMouseUp, .rightMouseUp, .otherMouseUp:

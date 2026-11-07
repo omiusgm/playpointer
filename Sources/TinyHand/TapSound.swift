@@ -20,6 +20,7 @@ final class TapSound {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private var buffers: [TapSoundChoice: AVAudioPCMBuffer] = [:]
+    private var magicBuffer: AVAudioPCMBuffer?
     private var choice: TapSoundChoice
     private var idleStop: DispatchWorkItem?
 
@@ -28,10 +29,11 @@ final class TapSound {
     init(_ choice: TapSoundChoice = Preferences.tapSound) {
         self.choice = choice
         for c in TapSoundChoice.allCases {
-            if let buffer = TapSound.read(c) {
+            if let buffer = TapSound.read("tap_\(c.rawValue)") {
                 buffers[c] = buffer
             }
         }
+        magicBuffer = TapSound.read("tap_magic")
         engine.attach(player)
         let format = buffers.values.first?.format ?? AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)
         engine.connect(player, to: engine.mainMixerNode, format: format)
@@ -46,8 +48,8 @@ final class TapSound {
         start()
     }
 
-    func play() {
-        guard enabled, let buffer = buffers[choice] else {
+    func play(magic: Bool = false) {
+        guard enabled, let buffer = (magic ? magicBuffer : nil) ?? buffers[choice] else {
             return
         }
         start()
@@ -70,8 +72,7 @@ final class TapSound {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: stop)
     }
 
-    private static func read(_ choice: TapSoundChoice) -> AVAudioPCMBuffer? {
-        let name = "tap_\(choice.rawValue)"
+    private static func read(_ name: String) -> AVAudioPCMBuffer? {
         let exeDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
         let candidates = [
             Bundle.main.url(forResource: name, withExtension: "wav"),

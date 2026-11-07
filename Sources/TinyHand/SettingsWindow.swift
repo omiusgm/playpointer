@@ -30,7 +30,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             model.section = section
         }
         model.shortcutError = nil
-        model.pinMessage = nil
         NSApp.activate(ignoringOtherApps: true)
         if window?.isVisible != true {
             window?.center()

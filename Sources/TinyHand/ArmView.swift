@@ -33,10 +33,11 @@ final class ArmView: NSView {
     private var gripTarget: CGFloat?
     private var displayImages: [ObjectIdentifier: (height: Int, image: CGImage)] = [:]
     private var displayImage: CGImage?
-    private var catFollow: (position: CGPoint, target: CGPoint, time: CFTimeInterval)?
+    private var catFollow: (position: CGPoint, target: CGPoint, time: CFTimeInterval, aboveLaser: Bool)?
 
     var isWand: Bool { style.rawValue == "funny10" }
-    var isNyanCat: Bool { style.rawValue == "funny11" }
+    var isNyanCat: Bool { style.rawValue == "funny11" || style == .nyanFlight }
+    private var rodHandLenFrac: CGFloat { isWand ? handLenFrac * 1.55 : handLenFrac }
 
     private var wandBurst: (cursor: CGPoint, endsAt: CFTimeInterval)?
     private lazy var wandSparks = (0..<10).map { index -> CAShapeLayer in
@@ -64,7 +65,7 @@ final class ArmView: NSView {
         return spark
     }
 
-    private var trailAnchor: (point: CGPoint, time: CFTimeInterval)?
+    private var trailAnchor: (point: CGPoint, cursor: CGPoint, time: CFTimeInterval)?
     private var rainbowSegments: [CALayer] = []
     private var nextRainbowSegment = 0
 
@@ -299,21 +300,27 @@ final class ArmView: NSView {
         }
     }
 
-    private func updateRainbowTrail(at cursor: CGPoint) {
-        let now = CACurrentMediaTime()
+    private func updateRainbowTrail(at cursor: CGPoint, emitter: CGPoint? = nil, now: CFTimeInterval = CACurrentMediaTime()) {
+        let point = emitter ?? cursor
         guard let anchor = trailAnchor else {
-            trailAnchor = (cursor, now)
+            trailAnchor = (point, cursor, now)
+            return
+        }
+        if cursor == anchor.cursor {
+            // A press can resize the flying cat without moving the cursor.
+            if point != anchor.point { trailAnchor = (point, cursor, anchor.time) }
             return
         }
         // The pointer timer can run at 120 Hz. Sample about every other tick.
         guard now - anchor.time >= 0.014 else { return }
-        let dx = cursor.x - anchor.point.x
-        let dy = cursor.y - anchor.point.y
+        let dx = point.x - anchor.point.x
+        let dy = point.y - anchor.point.y
         let distance = hypot(dx, dy)
-        guard distance >= 2 else { return }
-        trailAnchor = (cursor, now)
+        let cursorDistance = emitter == nil ? distance : hypot(cursor.x - anchor.cursor.x, cursor.y - anchor.cursor.y)
+        guard distance >= 2, cursorDistance >= 2 else { return }
+        trailAnchor = (point, cursor, now)
         // A cursor warp should not draw a stripe across the whole screen.
-        guard distance <= 160 else { return }
+        guard distance <= 160, cursorDistance <= 160 else { return }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -340,7 +347,7 @@ final class ArmView: NSView {
            now >= burst.endsAt || hypot(cursor.x - burst.cursor.x, cursor.y - burst.cursor.y) > 6 {
             stopWandSparks()
         }
-        if isNyanCat && !pointerHidden { updateRainbowTrail(at: cursor) }
+        if style.rawValue == "funny11" && !pointerHidden { updateRainbowTrail(at: cursor) }
         if style.isCatFollower, let asset {
             if !pointerHidden { aimCatFollower(cursor: cursor, asset: asset, now: now) }
             return
@@ -350,6 +357,11 @@ final class ArmView: NSView {
         }
         if style.isStandaloneCursor, let asset {
             aimStandalone(cursor: cursor, asset: asset)
+            if style == .nyanFlight, !pointerHidden {
+                let tail = CGPoint(x: standaloneLayer.bounds.width * 0.20, y: standaloneLayer.bounds.height * 0.42)
+                let emitter = standaloneLayer.convert(tail, to: layer)
+                updateRainbowTrail(at: cursor, emitter: emitter, now: now)
+            }
             return
         }
 
@@ -373,7 +385,7 @@ final class ArmView: NSView {
         let reach = hypot(dx, dy)
         let aimAngle = atan2(dy, dx)
 
-        let handPts = handLenFrac * screenH * (1 - 0.06 * pressAmount)
+        let handPts = rodHandLenFrac * screenH * (1 - 0.06 * pressAmount)
         let s = handPts / (a.wrist - a.handTop)
         let widthPts = s * a.aspect
         let handTipPts = (a.wrist - a.tip) * s
@@ -384,7 +396,8 @@ final class ArmView: NSView {
         let rodLen = max(minRodLen, along - handTipPts)
         let tipAngle = atan2(rodLen + handTipPts, tipOffX)
         let rotation = aimAngle - tipAngle
-        if pressedAsset != nil && rodLen == minRodLen {
+        let keepsExactTip = isWand || pressedAsset != nil
+        if keepsExactTip && rodLen == minRodLen {
             // Keep the hotspot aligned even when the minimum rod length moves the grip back.
             let correction = reach - hypot(rodLen + handTipPts, tipOffX)
             grip.x += cos(aimAngle) * correction
@@ -400,7 +413,7 @@ final class ArmView: NSView {
         )
 
         let values = [rotation, rodLen, handPts, widthPts, grip.x, grip.y, lift, pressAmount, showShadow ? 1 : 0, a.aspect]
-        let pose = pressedAsset != nil ? values : values.map { ($0 * 100).rounded() }
+        let pose = keepsExactTip ? values : values.map { ($0 * 100).rounded() }
         guard pose != lastPose else {
             return
         }
@@ -432,7 +445,8 @@ final class ArmView: NSView {
     }
 
     private func aimStandalone(cursor: CGPoint, asset: HandAsset) {
-        let height = handLenFrac * bounds.height * 0.45 * (1 - 0.06 * pressAmount)
+        let sizeScale: CGFloat = style == .nyanFlight ? 1.05 : 0.8
+        let height = handLenFrac * bounds.height * sizeScale * (1 - 0.06 * pressAmount)
         let spriteBounds = CGRect(x: 0, y: 0, width: height * asset.aspect, height: height)
         let shadowOpacity: Float = showShadow ? 0.26 : 0
         guard standaloneLayer.position != cursor || standaloneLayer.bounds != spriteBounds
@@ -453,51 +467,44 @@ final class ArmView: NSView {
         }
 
         let frame = reactionAsset(at: now) ?? asset
-        let height = min(handLenFrac * bounds.height * 0.54, bounds.width * 0.4 / frame.aspect)
+        let sizeScale: CGFloat = style == .catLaser ? 2 : 1.6
+        let height = min(handLenFrac * bounds.height * 0.54 * sizeScale, bounds.width * 0.4 / frame.aspect)
             * (1 - 0.06 * pressAmount)
         let halfWidth = height * frame.aspect / 2
         let halfHeight = height / 2
         let gap = laserRadius + 5
         let centers = bounds.insetBy(dx: halfWidth, dy: halfHeight)
-        let below = cursor.y - halfHeight - gap
+        let offsetY = halfHeight + gap
+        let below = cursor.y - offsetY
+        // Stay above until there is room to return below without flipping at the edge.
+        let returnMargin = min(24, max(10, height * 0.15))
+        let aboveLaser = below < centers.minY + (previous?.aboveLaser == true ? returnMargin : 0)
+        let targetY = aboveLaser ? cursor.y + offsetY : below
         let target = CGPoint(
             x: min(centers.maxX, max(centers.minX, cursor.x + halfWidth * 0.38)),
-            y: below >= centers.minY ? min(centers.maxY, below) : min(centers.maxY, cursor.y + halfHeight + gap)
+            y: min(centers.maxY, max(centers.minY, targetY))
         )
 
         var position = target
         if let previous, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let remaining = CGFloat(exp(-elapsed / 0.048))
-            let dx = (previous.position.x - target.x) * remaining
-            let dy = (previous.position.y - target.y) * remaining
+            let dx = target.x - previous.position.x
+            let dy = target.y - previous.position.y
             let distance = hypot(dx, dy)
-            if distance > 0.5 {
-                let limit = min(1, height * 1.3 / distance)
-                position.x += dx * limit
-                position.y += dy * limit
+            let maxSpeed = max(1200, max(bounds.width, bounds.height) * 2.3)
+            let maxTravel = maxSpeed * elapsed
+            let easing = CGFloat(1 - exp(-elapsed / 0.048))
+            let travel = min(distance * easing, maxTravel)
+            if distance - travel > 0.5 || distance > maxTravel {
+                let step = travel / distance
+                position.x = previous.position.x + dx * step
+                position.y = previous.position.y + dy * step
             }
         }
-        catFollow = (position, target, now)
-
-        // A fast move can bring the hotspot into the lagging sprite's frame.
-        // Slide the sprite clear along the shortest direction that fits on screen.
+        // Keep the actual rendered position as the starting point for the next frame.
+        // The laser renders above the sprite during brief crossings.
         position.x = min(centers.maxX, max(centers.minX, position.x))
         position.y = min(centers.maxY, max(centers.minY, position.y))
-        let clearanceX = halfWidth + gap
-        let clearanceY = halfHeight + gap
-        if abs(position.x - cursor.x) < clearanceX && abs(position.y - cursor.y) < clearanceY {
-            let options = [
-                CGPoint(x: position.x, y: cursor.y - clearanceY),
-                CGPoint(x: position.x, y: cursor.y + clearanceY),
-                CGPoint(x: cursor.x - clearanceX, y: position.y),
-                CGPoint(x: cursor.x + clearanceX, y: position.y),
-            ].filter {
-                (centers.minX...centers.maxX).contains($0.x) && (centers.minY...centers.maxY).contains($0.y)
-            }
-            position = options.min {
-                hypot($0.x - position.x, $0.y - position.y) < hypot($1.x - position.x, $1.y - position.y)
-            } ?? target
-        }
+        catFollow = (position, target, now, aboveLaser)
 
         let spriteBounds = CGRect(x: 0, y: 0, width: halfWidth * 2, height: height)
         let shadowOpacity: Float = showShadow ? 0.26 : 0
@@ -541,7 +548,7 @@ final class ArmView: NSView {
     private func preparedDisplayImage(_ a: HandAsset) -> CGImage {
         let full = a.image
         let scale = window?.backingScaleFactor ?? 2
-        let restPts = handLenFrac * bounds.height / (a.wrist - a.handTop)
+        let restPts = rodHandLenFrac * bounds.height / (a.wrist - a.handTop)
         let step = 64
         let needed = (Int((restPts * scale).rounded(.up)) + step - 1) / step * step
         let height = needed >= full.height * 9 / 10 ? full.height : max(step, needed)

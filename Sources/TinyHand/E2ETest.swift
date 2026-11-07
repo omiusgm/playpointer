@@ -88,7 +88,7 @@ enum E2ETest {
         }
 
         let defaults = UserDefaults.standard
-        let preferenceKeys = ["pointerMode", "pointerStyle", "interactKey", OverlayController.hintShownKey]
+        let preferenceKeys = ["pointerMode", "pointerStyle", "interactKey", "recentStyles", OverlayController.hintShownKey]
         let savedPreferences = preferenceKeys.map { ($0, defaults.object(forKey: $0)) }
         Preferences.pointerMode = .control
         Preferences.interactKey = .option

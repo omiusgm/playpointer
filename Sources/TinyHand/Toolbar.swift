@@ -28,8 +28,13 @@ final class Toolbar {
     private let panel: Panel
     private let stack = NSStackView()
     private let modes = ModeControl()
+    private let styleScroll = NSScrollView()
+    private let styleStrip = NSView()
+    private lazy var styleWidth = styleScroll.widthAnchor.constraint(equalToConstant: Self.preferredStyleWidth)
+    private var requestedThumbnails = Set<String>()
     private var styleButtons: [PointerStyle: Button] = [:]
     private var shownStyles: [PointerStyle] = []
+    private var visibleScreen: CGRect?
     private var current: PointerStyle?
     private var catalogButton: Button?
     private var catalog: Panel?
@@ -42,6 +47,15 @@ final class Toolbar {
     private let tray: Panel
     private let trayStack = NSStackView()
     private var hint: Panel?
+
+    private static let styleSide: CGFloat = 40
+    private static let stylePitch: CGFloat = 46
+    // Six complete icons and the beginning of the next one signal that the row scrolls.
+    private static let preferredStyleWidth: CGFloat = 296
+    private static let starterStyles = [
+        .catLaser, PointerStyle(rawValue: "funny17"), .squeaky,
+        .catFish, PointerStyle(rawValue: "funny10"), .nyanFlight,
+    ].compactMap { $0 }
 
     var catalogFrame: CGRect? { catalog?.frame }
     var frame: CGRect { inkOpen ? panel.frame.union(tray.frame) : panel.frame }
@@ -99,6 +113,22 @@ final class Toolbar {
             trayStack.bottomAnchor.constraint(equalTo: trayBackground.bottomAnchor),
         ])
 
+        styleScroll.drawsBackground = false
+        styleScroll.borderType = .noBorder
+        styleScroll.hasHorizontalScroller = true
+        styleScroll.hasVerticalScroller = false
+        styleScroll.verticalScrollElasticity = .none
+        styleScroll.scrollerStyle = .overlay
+        styleScroll.scrollerKnobStyle = .light
+        styleScroll.autohidesScrollers = true
+        styleScroll.automaticallyAdjustsContentInsets = false
+        styleScroll.contentView.postsBoundsChangedNotifications = true
+        styleScroll.documentView = styleStrip
+        styleScroll.setAccessibilityLabel("Указатели: сначала недавние")
+        stack.addArrangedSubview(styleScroll)
+        styleWidth.isActive = true
+        styleScroll.heightAnchor.constraint(equalToConstant: Self.styleSide).isActive = true
+
         let more = makeButton(symbol: "plus", tip: "Все указатели") { [weak self] in
             self?.toggleCatalog()
         }
@@ -136,6 +166,13 @@ final class Toolbar {
         background.removeFocusRings()
         resize()
         refreshInk()
+        NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification,
+                                               object: styleScroll.contentView, queue: .main) { [weak self] _ in
+            self?.updateVisibleStyleImages()
+        }
+        NotificationCenter.default.addObserver(forName: CustomHands.changed, object: nil, queue: .main) { [weak self] _ in
+            self?.rebuildStyles()
+        }
         NotificationCenter.default.addObserver(forName: Preferences.changed, object: nil, queue: .main) { [weak self] _ in
             self?.rebuildStyles()
             self?.refreshInk()
@@ -284,36 +321,91 @@ final class Toolbar {
     }
 
     private func resizeKeepingCenter() {
-        let center = CGPoint(x: panel.frame.midX, y: panel.frame.minY)
+        let frame = panel.frame
         resize()
-        panel.setFrameOrigin(CGPoint(x: center.x - panel.frame.width / 2, y: center.y))
+        let x = frame.midX - panel.frame.width / 2
+        let visible = visibleScreen ?? panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        let boundedX = visible.map { max($0.minX, min(x, $0.maxX - panel.frame.width)) } ?? x
+        panel.setFrameOrigin(CGPoint(x: boundedX, y: frame.minY))
     }
 
     private func rebuildStyles() {
-        var styles = Preferences.pinnedStyles
-        if let c = current, !styles.contains(c) {
-            styles.append(c)
-        }
-        if styles == shownStyles {
-            return
-        }
+        var seen = Set<PointerStyle>()
+        let styles = (Preferences.recentStyles + Self.starterStyles + PointerStyle.allCases)
+            .filter { seen.insert($0).inserted }
+        guard styles != shownStyles else { return }
+        let offset = styleScroll.contentView.bounds.minX
         shownStyles = styles
-        for b in styleButtons.values {
-            actions[b] = nil
-            b.removeFromSuperview()
-        }
-        styleButtons = [:]
-        for (i, style) in styles.enumerated() {
-            let b = makeButton(image: Toolbar.icon(for: style), tip: style.title) { [weak self] in
-                self?.onPick?(style)
+        for style in styleButtons.keys.filter({ !seen.contains($0) }) {
+            if let button = styleButtons.removeValue(forKey: style) {
+                actions[button] = nil
+                button.removeFromSuperview()
             }
-            styleButtons[style] = b
-            stack.insertArrangedSubview(b, at: i)
+        }
+        styleStrip.frame.size = NSSize(width: max(0, CGFloat(styles.count) * Self.stylePitch - (Self.stylePitch - Self.styleSide)),
+                                       height: Self.styleSide)
+        for (i, style) in styles.enumerated() {
+            let button: Button
+            if let existing = styleButtons[style] {
+                button = existing
+            } else {
+                let placeholder = style.assetName == nil ? Self.icon(for: style) : Self.stylePlaceholder
+                button = makeButton(image: placeholder, tip: style.title, side: Self.styleSide) { [weak self] in
+                    self?.onPick?(style)
+                }
+                button.focusRingType = .none
+                styleButtons[style] = button
+                styleStrip.addSubview(button)
+            }
+            button.frame = NSRect(x: CGFloat(i) * Self.stylePitch, y: 0, width: Self.styleSide, height: Self.styleSide)
         }
         if let c = current {
             highlight(c)
         }
-        resizeKeepingCenter()
+        scrollStyles(to: offset)
+        updateVisibleStyleImages()
+    }
+
+    private static let stylePlaceholder = NSImage(systemSymbolName: "cursorarrow", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 15, weight: .medium))
+
+    private func updateVisibleStyleImages(synchronously: Bool = false) {
+        let visible = styleScroll.documentVisibleRect
+        guard visible.width > 0, !shownStyles.isEmpty else { return }
+        let first = max(0, Int(floor(visible.minX / Self.stylePitch)))
+        let last = min(shownStyles.count, Int(ceil(visible.maxX / Self.stylePitch)) + (synchronously ? 0 : 2))
+        guard first < last else { return }
+        var pending: [String] = []
+        for style in shownStyles[first..<last] {
+            guard let name = style.assetName, let button = styleButtons[style] else { continue }
+            let image = synchronously ? HandAsset.thumbnail(name) : HandAsset.cachedThumbnail(name)
+            if let image {
+                button.image = image
+            } else if !synchronously && requestedThumbnails.insert(name).inserted {
+                pending.append(name)
+            }
+        }
+        if !pending.isEmpty {
+            HandAsset.preloadThumbnails(pending) { [weak self] in self?.updateVisibleStyleImages() }
+        }
+    }
+
+    private func scrollStyles(to offset: CGFloat) {
+        let clip = styleScroll.contentView
+        let maxOffset = max(0, styleStrip.bounds.width - clip.bounds.width)
+        let x = min(max(0, offset), maxOffset)
+        guard x != clip.bounds.minX else { return }
+        clip.scroll(to: CGPoint(x: x, y: 0))
+        styleScroll.reflectScrolledClipView(clip)
+    }
+
+    private func revealStyle(_ button: Button) {
+        let visible = styleScroll.documentVisibleRect
+        if button.frame.minX < visible.minX {
+            scrollStyles(to: button.frame.minX)
+        } else if button.frame.maxX > visible.maxX {
+            scrollStyles(to: button.frame.maxX - visible.width)
+        }
     }
 
     func setSoundOn(_ on: Bool) {
@@ -330,6 +422,7 @@ final class Toolbar {
         guard let b = styleButtons[style], let w = b.window else {
             return nil
         }
+        revealStyle(b) // Return a hittable position for the desktop test.
         let r = w.convertToScreen(b.convert(b.bounds, to: nil))
         return CGPoint(x: r.midX, y: r.midY)
     }
@@ -347,6 +440,7 @@ final class Toolbar {
         }
         view.layer?.backgroundColor = NSColor(white: 0.16, alpha: 1).cgColor
         view.layoutSubtreeIfNeeded()
+        updateVisibleStyleImages(synchronously: true)
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             return nil
         }
@@ -474,12 +568,16 @@ final class Toolbar {
         current = style
         rebuildStyles()
         highlight(style)
+        if Preferences.recentStyles.first == style, let button = styleButtons[style] {
+            revealStyle(button)
+        }
         refreshInk()
     }
 
     private func highlight(_ style: PointerStyle) {
         for (s, b) in styleButtons {
             b.layer?.backgroundColor = s == style ? NSColor(white: 1, alpha: 0.18).cgColor : NSColor.clear.cgColor
+            b.setAccessibilitySelected(s == style)
         }
     }
 
@@ -492,8 +590,10 @@ final class Toolbar {
     func place(on screen: NSScreen) {
         closeCatalog()
         setInkOpen(false)
+        visibleScreen = screen.visibleFrame
+        resize()
         let f = panel.frame
-        panel.setFrameOrigin(CGPoint(x: screen.frame.midX - f.width / 2, y: screen.visibleFrame.minY + 14))
+        panel.setFrameOrigin(CGPoint(x: screen.visibleFrame.midX - f.width / 2, y: screen.visibleFrame.minY + 14))
     }
 
     func show() {
@@ -527,10 +627,14 @@ final class Toolbar {
     }
 
     private func resize() {
-        stack.layoutSubtreeIfNeeded()
+        let available = (visibleScreen ?? panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame)?.width ?? 1440
+        let controlsWidth = stack.fittingSize.width - styleWidth.constant
+        styleWidth.constant = min(Self.preferredStyleWidth, max(0, available - controlsWidth - 24))
         let size = stack.fittingSize
         panel.setContentSize(size)
+        panel.contentView?.layoutSubtreeIfNeeded()
         panel.invalidateShadow()
+        updateVisibleStyleImages()
     }
 
     private var actions: [Button: () -> Void] = [:]
