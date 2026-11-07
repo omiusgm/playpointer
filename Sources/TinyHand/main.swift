@@ -112,7 +112,7 @@ if CommandLine.arguments.contains("--asset-test") {
             continue
         }
     }
-    let reactions = styles.compactMap(\.pressedAssetName)
+    let reactions = styles.compactMap(\.pressedAssetName) + styles.compactMap(\.alternateAssetName)
     for name in reactions where HandAsset.load(name) == nil {
         print("FAIL: \(name) reaction asset")
         failed = true

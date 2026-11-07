@@ -12,6 +12,7 @@ final class ArmView: NSView {
     private(set) var style: PointerStyle = .lavender
     private var asset: HandAsset?
     private var pressedAsset: HandAsset?
+    private var alternateAsset: HandAsset?
 
     private var handLenFrac: CGFloat = Preferences.pointerSize
     private var showShadow = Preferences.showShadow
@@ -37,6 +38,8 @@ final class ArmView: NSView {
 
     var isWand: Bool { style.rawValue == "funny10" }
     var isNyanCat: Bool { style.rawValue == "funny11" || style == .nyanFlight }
+    var isBongoCat: Bool { style == .bongoCat }
+    var bongoTap: Int? { isBongoCat && !pointerHidden ? bongoPhase : nil }
     private var rodHandLenFrac: CGFloat { isWand ? handLenFrac * 1.55 : handLenFrac }
 
     private var wandBurst: (cursor: CGPoint, endsAt: CFTimeInterval)?
@@ -68,6 +71,11 @@ final class ArmView: NSView {
     private var trailAnchor: (point: CGPoint, cursor: CGPoint, time: CFTimeInterval)?
     private var rainbowSegments: [CALayer] = []
     private var nextRainbowSegment = 0
+    private var bongoPhase: Int?
+    private var bongoMotionAnchor: (point: CGPoint, time: CFTimeInterval)?
+    private var bongoPendingNote: Int?
+    private var bongoNotes: [CAShapeLayer] = []
+    private var nextBongoNote = 0
 
     var isSettling: Bool {
         if pressAmount > 0.002 || reactionUntil != nil {
@@ -156,13 +164,16 @@ final class ArmView: NSView {
         style = newStyle
         asset = newStyle.assetName.flatMap(HandAsset.load)
         pressedAsset = newStyle.pressedAssetName.flatMap(HandAsset.load)
-        if newStyle.isCatFollower || pressedAsset != nil { pressAmount = 0 }
+        alternateAsset = newStyle.alternateAssetName.flatMap(HandAsset.load)
+        if newStyle.isCatFollower || pressedAsset != nil || alternateAsset != nil { pressAmount = 0 }
         displayImages.removeAll()
         displayImage = nil
         if newStyle != .laser && asset == nil {
             style = .laser
             pressedAsset = nil
+            alternateAsset = nil
         }
+        if !isBongoCat { bongoPhase = nil }
         updateInkColor()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -177,6 +188,7 @@ final class ArmView: NSView {
             } else if style.isStandaloneCursor {
                 standaloneLayer.bounds = .zero
                 standaloneLayer.anchorPoint = CGPoint(x: a.tipX, y: 1 - a.tip)
+                displayImage = a.image
             } else {
                 if let pressedAsset { _ = preparedDisplayImage(pressedAsset) }
                 updateDisplayImage(a)
@@ -191,9 +203,13 @@ final class ArmView: NSView {
     }
 
     func press(at now: CFTimeInterval = CACurrentMediaTime()) {
-        if pointerHidden && (style.isCatFollower || pressedAsset != nil) { return }
+        if pointerHidden && (style.isCatFollower || pressedAsset != nil || isBongoCat) { return }
         pressAmount = 1
-        if pressedAsset != nil {
+        if isBongoCat {
+            bongoPhase = bongoPhase == 0 ? 1 : 0
+            bongoPendingNote = bongoPhase
+        }
+        if pressedAsset != nil || alternateAsset != nil {
             reactionUntil = now + 0.15
         }
     }
@@ -203,7 +219,8 @@ final class ArmView: NSView {
             self.reactionUntil = nil
             return nil
         }
-        return pressedAsset
+        if isBongoCat && bongoPhase == 1 { return alternateAsset ?? pressedAsset }
+        return pressedAsset ?? alternateAsset
     }
 
     func showWandSparks(at cursor: CGPoint) {
@@ -256,7 +273,14 @@ final class ArmView: NSView {
     func clearPointerEffects() {
         stopWandSparks()
         reactionUntil = nil
-        if pressedAsset != nil { pressAmount = 0 }
+        if pressedAsset != nil || alternateAsset != nil { pressAmount = 0 }
+        if isBongoCat {
+            bongoPendingNote = nil
+            clearBongoNotes()
+            if let asset, displayImage !== asset.image {
+                aimStandalone(cursor: standaloneLayer.position, asset: asset)
+            }
+        }
         if style.isCatFollower {
             catFollow = nil
             pressAmount = 0
@@ -342,6 +366,91 @@ final class ArmView: NSView {
         segment.add(fade, forKey: "fade")
     }
 
+    private func clearBongoNotes() {
+        bongoMotionAnchor = nil
+        nextBongoNote = 0
+        bongoNotes.forEach { $0.removeAnimation(forKey: "note") }
+    }
+
+    private func updateBongoNotes(at cursor: CGPoint, now: CFTimeInterval) {
+        let tap = bongoPendingNote
+        bongoPendingNote = nil
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            if bongoMotionAnchor != nil { clearBongoNotes() }
+            return
+        }
+
+        let anchor = bongoMotionAnchor
+        let distance = anchor.map { hypot(cursor.x - $0.point.x, cursor.y - $0.point.y) } ?? 0
+        let moved = anchor.map { now - $0.time >= 0.075 && distance >= 36 && distance <= 160 } ?? false
+        if anchor == nil || moved || tap != nil || distance > 160 {
+            bongoMotionAnchor = (cursor, now)
+        }
+        guard tap != nil || moved else { return }
+
+        let tail = CGPoint(x: standaloneLayer.bounds.width * 0.24, y: standaloneLayer.bounds.height * 0.40)
+        let emitter = standaloneLayer.convert(tail, to: layer)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if bongoNotes.isEmpty { bongoNotes = makeBongoNotes() }
+        emitBongoNote(at: emitter)
+        if let tap {
+            emitBongoNote(at: CGPoint(x: emitter.x + (tap == 0 ? -10 : 8), y: emitter.y + 8))
+        }
+        CATransaction.commit()
+    }
+
+    private func makeBongoNotes() -> [CAShapeLayer] {
+        let shape = CGMutablePath()
+        shape.move(to: CGPoint(x: 0, y: -3))
+        shape.addLine(to: CGPoint(x: 0, y: 7))
+        shape.addLine(to: CGPoint(x: 2, y: 7))
+        shape.addQuadCurve(to: CGPoint(x: 7, y: 1), control: CGPoint(x: 7, y: 5))
+        shape.addQuadCurve(to: CGPoint(x: 2, y: 3), control: CGPoint(x: 5, y: 3))
+        shape.addLine(to: CGPoint(x: 2, y: -4))
+        shape.addQuadCurve(to: CGPoint(x: -5, y: -7), control: CGPoint(x: 2, y: -8))
+        shape.addQuadCurve(to: CGPoint(x: -5, y: -4), control: CGPoint(x: -7, y: -6))
+        shape.addQuadCurve(to: CGPoint(x: 0, y: -3), control: CGPoint(x: -3, y: -2))
+        shape.closeSubpath()
+
+        let colors: [UInt32] = [0xA570F3, 0xF176A2, 0x36C6C1, 0xEFA750]
+        return (0..<12).map { index in
+            let note = CAShapeLayer()
+            note.bounds = CGRect(x: -7, y: -8, width: 15, height: 16)
+            note.path = shape
+            note.fillColor = Ink.hex(colors[index % colors.count])
+            note.strokeColor = CGColor(gray: 0.15, alpha: 0.68)
+            note.lineWidth = 0.7
+            note.opacity = 0
+            layer?.insertSublayer(note, below: standaloneLayer)
+            return note
+        }
+    }
+
+    private func emitBongoNote(at origin: CGPoint) {
+        let index = nextBongoNote
+        let note = bongoNotes[index]
+        nextBongoNote = (index + 1) % bongoNotes.count
+        let spread = CGFloat(index % 4)
+        let duration = 0.34 + CFTimeInterval(spread) * 0.035
+
+        let drift = CABasicAnimation(keyPath: "position")
+        drift.fromValue = origin
+        drift.toValue = CGPoint(x: origin.x - 24 - spread * 5, y: origin.y + 21 + spread * 5)
+        drift.duration = duration
+        drift.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.92, 0.85, 0]
+        fade.keyTimes = [0, 0.25, 1]
+        fade.duration = duration
+
+        let animation = CAAnimationGroup()
+        animation.animations = [drift, fade]
+        animation.duration = duration
+        note.add(animation, forKey: "note")
+    }
+
     func aim(cursor: CGPoint, at now: CFTimeInterval = CACurrentMediaTime()) {
         if let burst = wandBurst,
            now >= burst.endsAt || hypot(cursor.x - burst.cursor.x, cursor.y - burst.cursor.y) > 6 {
@@ -356,11 +465,13 @@ final class ArmView: NSView {
             pressAmount += (0 - pressAmount) * 0.18
         }
         if style.isStandaloneCursor, let asset {
-            aimStandalone(cursor: cursor, asset: asset)
+            aimStandalone(cursor: cursor, asset: reactionAsset(at: now) ?? asset)
             if style == .nyanFlight, !pointerHidden {
                 let tail = CGPoint(x: standaloneLayer.bounds.width * 0.20, y: standaloneLayer.bounds.height * 0.42)
                 let emitter = standaloneLayer.convert(tail, to: layer)
                 updateRainbowTrail(at: cursor, emitter: emitter, now: now)
+            } else if isBongoCat, !pointerHidden {
+                updateBongoNotes(at: cursor, now: now)
             }
             return
         }
@@ -445,14 +556,26 @@ final class ArmView: NSView {
     }
 
     private func aimStandalone(cursor: CGPoint, asset: HandAsset) {
-        let sizeScale: CGFloat = style == .nyanFlight ? 1.05 : 0.8
-        let height = handLenFrac * bounds.height * sizeScale * (1 - 0.06 * pressAmount)
+        let sizeScale: CGFloat
+        switch style {
+        case .nyanFlight: sizeScale = 1.05
+        case .bongoCat: sizeScale = 1
+        default: sizeScale = 0.8
+        }
+        let compression = isBongoCat ? 1 : 1 - 0.06 * pressAmount
+        let height = handLenFrac * bounds.height * sizeScale * compression
         let spriteBounds = CGRect(x: 0, y: 0, width: height * asset.aspect, height: height)
         let shadowOpacity: Float = showShadow ? 0.26 : 0
-        guard standaloneLayer.position != cursor || standaloneLayer.bounds != spriteBounds
+        let imageChanged = displayImage !== asset.image
+        guard imageChanged || standaloneLayer.position != cursor || standaloneLayer.bounds != spriteBounds
                 || standaloneLayer.shadowOpacity != shadowOpacity else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        if imageChanged {
+            displayImage = asset.image
+            standaloneLayer.contents = asset.image
+            standaloneLayer.anchorPoint = CGPoint(x: asset.tipX, y: 1 - asset.tip)
+        }
         standaloneLayer.bounds = spriteBounds
         standaloneLayer.position = cursor
         standaloneLayer.shadowOpacity = shadowOpacity

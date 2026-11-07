@@ -94,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(NSMenuItem(title: "Проверить обновления…", action: #selector(checkForUpdates), keyEquivalent: ""))
         }
         menu.addItem(NSMenuItem(title: "Как включить рисование…", action: #selector(showDrawingHelp), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Поддержка и обратная связь…", action: #selector(openSupport), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти из PlayPointer", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
@@ -229,6 +230,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showDrawingHelp() {
         welcome.showDrawingHelp()
+    }
+
+    @objc private func openSupport() {
+        if let url = URL(string: "https://t.me/Krivosheevblog") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func checkForUpdates() {

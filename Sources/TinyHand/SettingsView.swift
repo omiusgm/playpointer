@@ -754,9 +754,10 @@ private struct AboutPage: View {
                 }
             }
             Card(title: nil) {
+                LinkRow(title: "Разработчик PlayPointer", detail: "Владимир Кривошеев · «Огонь внутри»", url: "https://t.me/Krivosheevblog")
                 LinkRow(title: "Исходный проект", detail: "tinyhand.app", url: "https://tinyhand.app")
                 LinkRow(title: "Исходный код", detail: "github.com/omiusgm/playpointer", url: "https://github.com/omiusgm/playpointer")
-                LinkRow(title: "Автор оригинала", detail: "@nilbuild в X", url: "https://x.com/nilbuild")
+                LinkRow(title: "Автор TinyHand", detail: "Камран Ахмед · @nilbuild", url: "https://x.com/nilbuild")
                 LinkRow(title: "Лицензия", detail: "MIT", url: "https://github.com/omiusgm/playpointer/blob/main/LICENSE")
             }
             HStack {

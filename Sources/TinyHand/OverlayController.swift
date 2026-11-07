@@ -73,7 +73,7 @@ final class OverlayController {
             self.armView.press()
             self.armView.held = true
             if feedback == .draw {
-                self.tapSound.play(magic: self.armView.isWand)
+                self.tapSound.play(magic: self.armView.isWand, bongo: self.armView.bongoTap)
                 self.toolbar.hideHint()
                 if button == 0 {
                     self.downPoint = self.localMouse()
@@ -494,7 +494,7 @@ final class OverlayController {
         let point = OverlayController.cgPoint(location)
         if toolbar.catalogFrame?.contains(point) == true || (toolbar.revealed && toolbar.frame.contains(point)) { return }
         armView.press()
-        tapSound.play(magic: armView.isWand)
+        tapSound.play(magic: armView.isWand, bongo: armView.bongoTap)
         showClickFeedback(at: point, primary: event.type == .leftMouseDown)
     }
 
@@ -505,7 +505,7 @@ final class OverlayController {
         let point = CGPoint(x: mouse.x - frame.minX, y: mouse.y - frame.minY)
         if armView.isWand {
             armView.showWandSparks(at: point)
-        } else if let layer = armView.layer {
+        } else if !armView.isBongoCat, let layer = armView.layer {
             clickPulse.show(at: point, color: armView.style.inkColor, in: layer)
         }
     }
@@ -665,7 +665,8 @@ final class OverlayController {
         }
         armView.aim(cursor: local)
         guard downPoint != nil else {
-            let busy = overDock || (!normalCursor && urgent) || CursorHider.isSettling || (armView.isNyanCat && mouseMoved)
+            let movingTrail = (armView.isNyanCat || armView.isBongoCat) && mouseMoved
+            let busy = overDock || (!normalCursor && urgent) || CursorHider.isSettling || movingTrail
             updatePace(busy: busy)
             return
         }

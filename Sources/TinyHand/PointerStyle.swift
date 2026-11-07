@@ -28,6 +28,7 @@ struct PointerStyle: Hashable {
     static let catPixel = PointerStyle("catPixel")
     static let catFish = PointerStyle("catFish")
     static let nyanFlight = PointerStyle("funny21")
+    static let bongoCat = PointerStyle("funny22")
     static let lavender = PointerStyle("lavender")
     static let glove = PointerStyle("glove")
     static let coral = PointerStyle("coral")
@@ -52,6 +53,7 @@ struct PointerStyle: Hashable {
         ("funny10", "Волшебная палочка", Ink.hex(0x7E79E8)),
         ("funny11", "Nyan Cat", Ink.hex(0x7E79E8)),
         ("funny21", "Летящий Nyan Cat", Ink.hex(0x7E79E8)),
+        ("funny22", "Музыкальный котик", Ink.hex(0x7E79E8)),
         ("funny12", "Космическое зелье", Ink.hex(0x7E79E8)),
         ("funny13", "Северное сияние", Ink.hex(0x7E79E8)),
         ("funny14", "Six Seven", Ink.hex(0x7E79E8)),
@@ -118,7 +120,7 @@ struct PointerStyle: Hashable {
 
     static let defaultPinned: [PointerStyle] = [.squeaky, .rocket, .catLaser, .lavender, .glove, .laser]
 
-    var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" || self == .nyanFlight }
+    var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" || self == .nyanFlight || self == .bongoCat }
 
     var isCatFollower: Bool { self == .catLaser || self == .catChaser || self == .catPixel || self == .catFish }
 
@@ -152,17 +154,20 @@ struct PointerStyle: Hashable {
         if self == .catPixel { return "hand_cat_pixel" }
         if self == .catFish { return "hand_cat_fish" }
         if self == .nyanFlight { return "hand_nyan_flight" }
+        if self == .bongoCat { return "hand_bongo_cat" }
         return "hand_\(rawValue)"
     }
 
     var pressedAssetName: String? {
         switch rawValue {
-        case "funny02", "funny17", "catChaser", "catPixel", "catFish":
+        case "funny02", "funny17", "funny22", "catChaser", "catPixel", "catFish":
             return assetName.map { "\($0)_pressed" }
         default:
             return nil
         }
     }
+
+    var alternateAssetName: String? { self == .bongoCat ? "hand_bongo_cat_alternate" : nil }
 
     var inkColor: CGColor {
         if self == .laser {
@@ -319,8 +324,12 @@ struct HandAsset {
         switch name {
         case "hand_cat_laser", "hand_cat_chaser", "hand_cat_chaser_pressed",
              "hand_cat_pixel", "hand_cat_pixel_pressed", "hand_cat_fish", "hand_cat_fish_pressed",
-             "hand_funny18", "hand_funny19", "hand_nyan_flight":
+             "hand_funny18", "hand_funny19", "hand_nyan_flight",
+             "hand_bongo_cat_pressed", "hand_bongo_cat_alternate":
             return measureStandalone(image)
+        case "hand_bongo_cat":
+            // The raised paw is higher than the cursor marker on the left.
+            return measureStandalone(image, tipSearchWidthFraction: 0.27)
         case "hand_wand_v2":
             // The wooden handle starts just below the gold ring.
             return measure(image, fixedWristFraction: 0.612)
@@ -330,7 +339,7 @@ struct HandAsset {
     }
 
     // Standalone cursors have no rod; their uppermost opaque pixel is the hotspot.
-    private static func measureStandalone(_ image: CGImage) -> HandAsset? {
+    private static func measureStandalone(_ image: CGImage, tipSearchWidthFraction: CGFloat = 1) -> HandAsset? {
         let w = image.width, h = image.height
         var alpha = [UInt8](repeating: 0, count: w * h)
         guard let ctx = CGContext(data: &alpha, width: w, height: h, bitsPerComponent: 8,
@@ -345,12 +354,26 @@ struct HandAsset {
             }
         }
         guard bottom > top, maxX >= minX else { return nil }
+        let tipWidth = max(1, Int(CGFloat(w) * tipSearchWidthFraction))
+        let tipRow: Int
+        if tipWidth < w {
+            guard let markerRow = (top...bottom).first(where: { y in
+                let rowStart = y * w
+                return alpha[rowStart..<(rowStart + tipWidth)].contains { $0 > 128 }
+            }) else { return nil }
+            tipRow = markerRow
+        } else {
+            tipRow = top
+        }
         var tipMin = w, tipMax = -1
-        for x in 0..<w where alpha[top * w + x] > 128 { tipMin = min(tipMin, x); tipMax = max(tipMax, x) }
+        for x in 0..<tipWidth where alpha[tipRow * w + x] > 128 {
+            tipMin = min(tipMin, x)
+            tipMax = max(tipMax, x)
+        }
         guard tipMax >= tipMin else { return nil }
         let wf = CGFloat(w), hf = CGFloat(h)
         let tipX = (CGFloat(tipMin + tipMax) / 2 + 0.5) / wf
-        let tipY = (CGFloat(top) + 0.5) / hf
+        let tipY = (CGFloat(tipRow) + 0.5) / hf
         return HandAsset(image: image, aspect: wf / hf, handTop: CGFloat(top) / hf,
                          tip: tipY, wrist: CGFloat(bottom + 1) / hf,
                          rodEnd: CGFloat(bottom + 1) / hf, tipX: tipX, rodX: tipX,

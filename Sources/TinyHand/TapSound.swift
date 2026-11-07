@@ -21,6 +21,7 @@ final class TapSound {
     private let player = AVAudioPlayerNode()
     private var buffers: [TapSoundChoice: AVAudioPCMBuffer] = [:]
     private var magicBuffer: AVAudioPCMBuffer?
+    private var bongoBuffers: [Int: AVAudioPCMBuffer] = [:]
     private var choice: TapSoundChoice
     private var idleStop: DispatchWorkItem?
 
@@ -34,6 +35,8 @@ final class TapSound {
             }
         }
         magicBuffer = TapSound.read("tap_magic")
+        bongoBuffers[0] = TapSound.read("tap_bongo_left")
+        bongoBuffers[1] = TapSound.read("tap_bongo_right")
         engine.attach(player)
         let format = buffers.values.first?.format ?? AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)
         engine.connect(player, to: engine.mainMixerNode, format: format)
@@ -48,8 +51,9 @@ final class TapSound {
         start()
     }
 
-    func play(magic: Bool = false) {
-        guard enabled, let buffer = (magic ? magicBuffer : nil) ?? buffers[choice] else {
+    func play(magic: Bool = false, bongo: Int? = nil) {
+        let special = magic ? magicBuffer : bongo.flatMap { bongoBuffers[$0] }
+        guard enabled, let buffer = special ?? buffers[choice] else {
             return
         }
         start()
