@@ -7,3 +7,5 @@ dist/
 assets/unused/
 
 dist-*/
+/windows/bin/
+/windows/obj/

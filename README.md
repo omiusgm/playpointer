@@ -15,7 +15,17 @@ PlayPointer — забавные указатели для демонстрац�
 
 Ошибки и идеи можно присылать в [блог Владимира «Огонь внутри»](https://t.me/Krivosheevblog). Для ошибки укажите версию PlayPointer, версию системы и шаги, на которых она проявляется. Ссылка есть в меню приложения и в разделе «О программе».
 
-## Сборка
+## Предварительная версия для Windows
+
+Возьмите ZIP для Windows 11 x64 на странице [Releases](https://github.com/omiusgm/playpointer/releases). Распакуйте весь архив в одну папку и запустите `PlayPointer.exe`. В архив уже включена среда .NET. Сборку проверили на этапе компиляции и упаковки. Запуск и работу в Windows ещё предстоит проверить.
+
+Чтобы собрать из исходников, используйте .NET 10 SDK:
+
+```sh
+dotnet publish windows/PlayPointer.Windows.csproj -c Release -r win-x64 --self-contained true
+```
+
+## Сборка для macOS
 
 Нужны macOS 13 или новее, Xcode и Swift. Выполните:
 

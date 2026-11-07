@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>PlayPointer.ico</ApplicationIcon>
+    <AssemblyName>PlayPointer</AssemblyName>
+    <RootNamespace>PlayPointer.Windows</RootNamespace>
+    <Product>PlayPointer</Product>
+    <Company>Владимир Кривошеев</Company>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="../assets/hand_*.png"
+             Exclude="../assets/hand_cat0*.png;../assets/hand_cat10.png;../assets/hand_paw_3d_v3.png;../assets/hand_funny07.png;../assets/hand_funny10.png;../assets/hand_funny16.png"
+             Link="assets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../assets/sounds/*.wav" Link="assets/sounds/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="PlayPointer.ico" />
+  </ItemGroup>
+</Project>
