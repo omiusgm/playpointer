@@ -51,7 +51,7 @@ internal static class PointerCatalog
         Style("funny22", "Музыкальный котик", 0x7E79E8, Cats, asset: "hand_bongo_cat", kind: PointerKind.Bongo, reacts: true),
         Style("funny12", "Космическое зелье", 0x7E79E8, Fun),
         Style("funny13", "Северное сияние", 0x7E79E8, Fun),
-        Style("funny14", "Six Seven", 0x7E79E8, Fun),
+        Style("funny14", "Six Seven", 0x7E79E8, Fun, reacts: true),
         Style("funny16", "Это голубь?", 0x7E79E8, Fun, asset: "hand_funny16_v2"),
         Style("funny17", "Забери мои деньги", 0x7E79E8, Fun, reacts: true),
         Style("funny18", "Бирюзовый пиксель", 0x31B6D2, Basic, kind: PointerKind.Pixel),
@@ -102,11 +102,17 @@ internal sealed class Artwork : IDisposable
 {
     internal Bitmap Image { get; }
     internal PointF Hotspot { get; }
+    internal Point CropOrigin { get; }
+    internal Size CanvasSize { get; }
+    internal PointF? TrailEmitter { get; }
 
-    private Artwork(Bitmap image, PointF hotspot)
+    private Artwork(Bitmap image, PointF hotspot, Point cropOrigin, Size canvasSize, PointF? trailEmitter)
     {
         Image = image;
         Hotspot = hotspot;
+        CropOrigin = cropOrigin;
+        CanvasSize = canvasSize;
+        TrailEmitter = trailEmitter;
     }
 
     internal static string PathFor(string name) => Path.Combine(AppContext.BaseDirectory, "assets", name + ".png");
@@ -128,6 +134,7 @@ internal sealed class Artwork : IDisposable
             graphics.DrawImage(source, new Rectangle(0, 0, width, height), 0, 0, source.Width, source.Height, GraphicsUnit.Pixel);
         }
 
+        bool isBongo = name.StartsWith("hand_bongo_cat", StringComparison.Ordinal);
         int left = width, right = -1, top = height, bottom = -1;
         int tipY = -1, tipLeft = width, tipRight = -1;
         var data = sample.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
@@ -147,7 +154,8 @@ internal sealed class Artwork : IDisposable
                         top = Math.Min(top, y);
                         bottom = Math.Max(bottom, y);
                     }
-                    if (alpha < 150 || (tipY >= 0 && tipY != y) || (name == "hand_bongo_cat" && x >= width * 0.27f)) continue;
+                    // Bongo's raised paw can be higher than the arrow on the left.
+                    if (alpha < 150 || (tipY >= 0 && tipY != y) || (isBongo && x >= width * 0.27f)) continue;
                     tipY = y;
                     tipLeft = Math.Min(tipLeft, x);
                     tipRight = Math.Max(tipRight, x);
@@ -162,7 +170,19 @@ internal sealed class Artwork : IDisposable
         var image = sample.Clone(crop, PixelFormat.Format32bppPArgb);
         var tip = new PointF(tipY < 0 ? image.Width / 2f : (tipLeft + tipRight + 1) / 2f - crop.X,
             tipY < 0 ? 0 : tipY + 0.5f - crop.Y);
-        return new Artwork(image, tip);
+        PointF? trailEmitter = null;
+        if (name == "hand_nyan_flight")
+        {
+            // Anchors in the source canvas at the leading edge of the face and the tail root.
+            tip = new PointF(0.9144f * width - crop.X, 0.6206f * height - crop.Y);
+            trailEmitter = new PointF(0.25f * width - crop.X, 0.55f * height - crop.Y);
+        }
+        else if (name == "hand_cat_chaser_pressed")
+        {
+            // The pink pad of the extended paw touches the laser dot.
+            tip = new PointF(0.084f * width - crop.X, 0.291f * height - crop.Y);
+        }
+        return new Artwork(image, tip, crop.Location, source.Size, trailEmitter);
     }
 
     public void Dispose() => Image.Dispose();

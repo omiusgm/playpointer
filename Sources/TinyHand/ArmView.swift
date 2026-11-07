@@ -35,6 +35,8 @@ final class ArmView: NSView {
     private var displayImages: [ObjectIdentifier: (height: Int, image: CGImage)] = [:]
     private var displayImage: CGImage?
     private var catFollow: (position: CGPoint, target: CGPoint, time: CFTimeInterval, aboveLaser: Bool)?
+    private let catPounceDuration: CFTimeInterval = 0.16
+    private var catPounce: (startedAt: CFTimeInterval, offset: CGPoint?)?
 
     var isWand: Bool { style.rawValue == "funny10" }
     var isNyanCat: Bool { style.rawValue == "funny11" || style == .nyanFlight }
@@ -71,6 +73,8 @@ final class ArmView: NSView {
     private var trailAnchor: (point: CGPoint, cursor: CGPoint, time: CFTimeInterval)?
     private var rainbowSegments: [CALayer] = []
     private var nextRainbowSegment = 0
+    private var nyanFlightFacesRight = false
+    private var nyanFlightMotion: (cursor: CGPoint, turnDistance: CGFloat)?
     private var bongoPhase: Int?
     private var bongoMotionAnchor: (point: CGPoint, time: CFTimeInterval)?
     private var bongoPendingNote: Int?
@@ -178,6 +182,7 @@ final class ArmView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         standaloneLayer.contents = style.isStandaloneCursor ? asset?.image : nil
+        standaloneLayer.setAffineTransform(style == .nyanFlight ? CGAffineTransform(scaleX: -1, y: 1) : .identity)
         catFollowerLayer.contents = nil
         if let a = asset, style != .laser {
             if style.isCatFollower {
@@ -210,12 +215,17 @@ final class ArmView: NSView {
             bongoPendingNote = bongoPhase
         }
         if pressedAsset != nil || alternateAsset != nil {
-            reactionUntil = now + 0.15
+            if style == .catChaser {
+                catPounce = (now, nil)
+                reactionUntil = now + catPounceDuration
+            } else {
+                reactionUntil = now + 0.15
+            }
         }
     }
 
     private func reactionAsset(at now: CFTimeInterval) -> HandAsset? {
-        guard let reactionUntil, held || now < reactionUntil else {
+        guard let reactionUntil, (held && style != .catChaser) || now < reactionUntil else {
             self.reactionUntil = nil
             return nil
         }
@@ -273,6 +283,7 @@ final class ArmView: NSView {
     func clearPointerEffects() {
         stopWandSparks()
         reactionUntil = nil
+        catPounce = nil
         if pressedAsset != nil || alternateAsset != nil { pressAmount = 0 }
         if isBongoCat {
             bongoPendingNote = nil
@@ -293,6 +304,14 @@ final class ArmView: NSView {
             trailAnchor = nil
             nextRainbowSegment = 0
             rainbowSegments.forEach { $0.removeAllAnimations() }
+        }
+        if style == .nyanFlight {
+            nyanFlightFacesRight = false
+            nyanFlightMotion = nil
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            standaloneLayer.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
+            CATransaction.commit()
         }
     }
 
@@ -364,6 +383,34 @@ final class ArmView: NSView {
         fade.duration = 0.34
         fade.timingFunction = CAMediaTimingFunction(name: .easeIn)
         segment.add(fade, forKey: "fade")
+    }
+
+    private func updateNyanFlightHeading(at cursor: CGPoint) {
+        var turnDistance: CGFloat = 0
+        if let previous = nyanFlightMotion {
+            let dx = cursor.x - previous.cursor.x
+            let dy = cursor.y - previous.cursor.y
+            if dx == 0 && dy == 0 { return }
+            if hypot(dx, dy) > 160 {
+                trailAnchor = nil
+            } else if abs(dx) >= abs(dy) * 0.6 {
+                let oppositeStep = nyanFlightFacesRight ? -dx : dx
+                if oppositeStep > 0 {
+                    turnDistance = previous.turnDistance + oppositeStep
+                    if previous.turnDistance > 0 && turnDistance >= 12 {
+                        nyanFlightFacesRight.toggle()
+                        turnDistance = 0
+                        // Keep existing segments fading and seed a new trail from the other side.
+                        trailAnchor = nil
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
+                        standaloneLayer.setAffineTransform(CGAffineTransform(scaleX: nyanFlightFacesRight ? 1 : -1, y: 1))
+                        CATransaction.commit()
+                    }
+                }
+            }
+        }
+        nyanFlightMotion = (cursor, turnDistance)
     }
 
     private func clearBongoNotes() {
@@ -467,7 +514,8 @@ final class ArmView: NSView {
         if style.isStandaloneCursor, let asset {
             aimStandalone(cursor: cursor, asset: reactionAsset(at: now) ?? asset)
             if style == .nyanFlight, !pointerHidden {
-                let tail = CGPoint(x: standaloneLayer.bounds.width * 0.20, y: standaloneLayer.bounds.height * 0.42)
+                updateNyanFlightHeading(at: cursor)
+                let tail = CGPoint(x: standaloneLayer.bounds.width * 0.25, y: standaloneLayer.bounds.height * 0.45)
                 let emitter = standaloneLayer.convert(tail, to: layer)
                 updateRainbowTrail(at: cursor, emitter: emitter, now: now)
             } else if isBongoCat, !pointerHidden {
@@ -559,7 +607,7 @@ final class ArmView: NSView {
         let sizeScale: CGFloat
         switch style {
         case .nyanFlight: sizeScale = 1.05
-        case .bongoCat: sizeScale = 1
+        case .bongoCat: sizeScale = 1.5
         default: sizeScale = 0.8
         }
         let compression = isBongoCat ? 1 : 1 - 0.06 * pressAmount
@@ -591,8 +639,9 @@ final class ArmView: NSView {
 
         let frame = reactionAsset(at: now) ?? asset
         let sizeScale: CGFloat = style == .catLaser ? 2 : 1.6
+        let compression = style == .catChaser ? 1 : 1 - 0.06 * pressAmount
         let height = min(handLenFrac * bounds.height * 0.54 * sizeScale, bounds.width * 0.4 / frame.aspect)
-            * (1 - 0.06 * pressAmount)
+            * compression
         let halfWidth = height * frame.aspect / 2
         let halfHeight = height / 2
         let gap = laserRadius + 5
@@ -609,7 +658,8 @@ final class ArmView: NSView {
         )
 
         var position = target
-        if let previous, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if let previous, !reduceMotion {
             let dx = target.x - previous.position.x
             let dy = target.y - previous.position.y
             let distance = hypot(dx, dy)
@@ -628,6 +678,30 @@ final class ArmView: NSView {
         position.x = min(centers.maxX, max(centers.minX, position.x))
         position.y = min(centers.maxY, max(centers.minY, position.y))
         catFollow = (position, target, now, aboveLaser)
+
+        if let pounce = catPounce {
+            let progress = max(0, CGFloat((now - pounce.startedAt) / catPounceDuration))
+            if progress >= 1 {
+                catPounce = nil
+            } else if !reduceMotion {
+                let offset: CGPoint
+                if let saved = pounce.offset {
+                    offset = saved
+                } else {
+                    // The center of the pink paw pad in the pressed frame.
+                    let paw = CGPoint(x: (0.084 - 0.5) * 2 * halfWidth, y: (0.709 - 0.5) * height)
+                    let dx = cursor.x - paw.x - target.x
+                    let dy = cursor.y - paw.y - target.y
+                    let distance = hypot(dx, dy)
+                    let limit = distance > height ? height / distance : 1
+                    offset = CGPoint(x: dx * limit, y: dy * limit)
+                    catPounce?.offset = offset
+                }
+                let lift = sin(.pi * progress)
+                position.x = min(centers.maxX, max(centers.minX, position.x + offset.x * lift * lift))
+                position.y = min(centers.maxY, max(centers.minY, position.y + offset.y * lift * lift))
+            }
+        }
 
         let spriteBounds = CGRect(x: 0, y: 0, width: halfWidth * 2, height: height)
         let shadowOpacity: Float = showShadow ? 0.26 : 0

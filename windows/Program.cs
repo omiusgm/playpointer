@@ -376,6 +376,7 @@ internal sealed class PlayPointerContext : ApplicationContext
 
     private void React(Point cursor, long now, bool primaryButton)
     {
+        if (style.Id == "catChaser" && !primaryButton) return;
         int reaction = 0;
         if (style.Kind == PointerKind.Bongo)
         {
