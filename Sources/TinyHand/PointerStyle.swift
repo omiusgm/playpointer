@@ -26,6 +26,7 @@ struct PointerStyle: Hashable {
     static let catLaser = PointerStyle("catLaser")
     static let catChaser = PointerStyle("catChaser")
     static let catPixel = PointerStyle("catPixel")
+    static let catFish = PointerStyle("catFish")
     static let lavender = PointerStyle("lavender")
     static let glove = PointerStyle("glove")
     static let coral = PointerStyle("coral")
@@ -37,6 +38,7 @@ struct PointerStyle: Hashable {
         ("catLaser", "Лапка за лазером", Ink.hex(0xD78461)),
         ("catChaser", "Котик за лазером", Ink.hex(0xD78461)),
         ("catPixel", "Пиксельный кот", Ink.hex(0xD78461)),
+        ("catFish", "Котик с рыбкой", Ink.hex(0xD78461)),
         ("funny01", "Весёлая стрелка", Ink.hex(0x7E79E8)),
         ("funny02", "Милая стрелочка", Ink.hex(0x7E79E8)),
         ("funny03", "Алмазный меч", Ink.hex(0x7E79E8)),
@@ -116,7 +118,7 @@ struct PointerStyle: Hashable {
 
     var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" }
 
-    var isCatFollower: Bool { self == .catLaser || self == .catChaser || self == .catPixel }
+    var isCatFollower: Bool { self == .catLaser || self == .catChaser || self == .catPixel || self == .catFish }
 
     var isCustom: Bool {
         CustomHands.hand(rawValue) != nil
@@ -144,12 +146,13 @@ struct PointerStyle: Hashable {
         if self == .catLaser { return "hand_cat_laser" }
         if self == .catChaser { return "hand_cat_chaser" }
         if self == .catPixel { return "hand_cat_pixel" }
+        if self == .catFish { return "hand_cat_fish" }
         return "hand_\(rawValue)"
     }
 
     var pressedAssetName: String? {
         switch rawValue {
-        case "funny02", "funny17", "catChaser", "catPixel":
+        case "funny02", "funny17", "catChaser", "catPixel", "catFish":
             return assetName.map { "\($0)_pressed" }
         default:
             return nil
@@ -310,7 +313,8 @@ struct HandAsset {
     private static func measure(_ image: CGImage, named name: String) -> HandAsset? {
         switch name {
         case "hand_cat_laser", "hand_cat_chaser", "hand_cat_chaser_pressed",
-             "hand_cat_pixel", "hand_cat_pixel_pressed", "hand_funny18", "hand_funny19":
+             "hand_cat_pixel", "hand_cat_pixel_pressed", "hand_cat_fish", "hand_cat_fish_pressed",
+             "hand_funny18", "hand_funny19":
             return measureStandalone(image)
         default:
             return measure(image)
