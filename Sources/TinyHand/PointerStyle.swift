@@ -25,50 +25,83 @@ struct PointerStyle: Hashable {
     static let laser = PointerStyle("laser")
 
     private static let builtIn: [(id: String, title: String, ink: CGColor)] = [
-        ("squeaky", "Squeaky toy", Ink.hex(0xE67F98)),
-        ("rocket", "Pocket rocket", Ink.hex(0x3284B4)),
-        ("paw", "Paw", Ink.hex(0xD78461)),
-        ("lavender", "Lavender toy", Ink.purple),
-        ("glove", "Cursor glove", Ink.purple),
-        ("coral", "Coral vinyl", Ink.red),
-        ("plush", "Plush", Ink.hex(0x2F86F0)),
-        ("robot", "Robot", Ink.hex(0x16A87A)),
-        ("pink", "Bubblegum", Ink.hex(0xEE4F98)),
-        ("blue", "Sky", Ink.hex(0x2F86F0)),
-        ("mint", "Mint", Ink.hex(0x16A87A)),
-        ("lemon", "Lemon", Ink.hex(0xF2B705)),
-        ("black", "Midnight", Ink.hex(0x1D1D21)),
-        ("chrome", "Chrome", Ink.hex(0x6B7380)),
-        ("holo", "Holo", Ink.purple),
-        ("fuzzy", "Fuzzy", Ink.purple),
-        ("wood", "Wood", Ink.hex(0x9A5E2C)),
-        ("marble", "Marble", Ink.hex(0x6B7380)),
-        ("terrazzo", "Terrazzo", Ink.hex(0xF0561D)),
-        ("glass", "Glass", Ink.hex(0x1597E5)),
-        ("jelly", "Jelly", Ink.hex(0xA33FE6)),
-        ("pastel", "Pastel", Ink.hex(0xEE4F98)),
-        ("pixel", "Pixel", Ink.hex(0x1D1D21)),
-        ("lowpoly", "Low poly", Ink.purple),
-        ("knit", "Knit", Ink.purple),
-        ("skeleton", "Skeleton", Ink.hex(0x9A5E2C)),
-        ("astro", "Astronaut", Ink.hex(0x2F86F0)),
-        ("space", "Space", Ink.red),
-        ("monster", "Monster", Ink.hex(0x3E9E2E)),
-        ("water", "Water", Ink.hex(0x1597E5)),
-        ("lava", "Lava", Ink.hex(0xF0561D)),
-        ("grass", "Grass", Ink.hex(0x3E9E2E)),
-        ("cactus", "Cactus", Ink.hex(0x3E9E2E)),
-        ("choco", "Chocolate", Ink.hex(0x9A5E2C)),
-        ("cloud", "Cloud", Ink.hex(0x2F86F0)),
-        ("mech", "Mech", Ink.hex(0xF0561D)),
-        ("neon", "Neon", Ink.hex(0xE0309A)),
-        ("leaf", "Leaf", Ink.hex(0x3E9E2E)),
-        ("cookie", "Gingerbread", Ink.hex(0x9A5E2C)),
+        ("cat01", "Серая лапка", Ink.hex(0xD78461)),
+        ("cat02", "Рыжая лапка", Ink.hex(0xD78461)),
+        ("cat03", "Фарфоровая лапка", Ink.hex(0xD78461)),
+        ("cat04", "Чёрная лапка", Ink.hex(0xD78461)),
+        ("cat05", "Тигровая лапка", Ink.hex(0xD78461)),
+        ("cat06", "Клубничная лапка", Ink.hex(0xD78461)),
+        ("cat07", "Лапка-робот", Ink.hex(0xD78461)),
+        ("cat08", "Трёхцветная лапка", Ink.hex(0xD78461)),
+        ("cat09", "Сиамская лапка", Ink.hex(0xD78461)),
+        ("cat10", "Космическая лапка", Ink.hex(0xD78461)),
+        ("funny01", "Весёлая стрелка", Ink.hex(0x7E79E8)),
+        ("funny02", "Милая стрелочка", Ink.hex(0x7E79E8)),
+        ("funny03", "Алмазный меч", Ink.hex(0x7E79E8)),
+        ("funny04", "Карандаш", Ink.hex(0x7E79E8)),
+        ("funny05", "Динозаврик", Ink.hex(0x7E79E8)),
+        ("funny06", "Инопланетянин", Ink.hex(0x7E79E8)),
+        ("funny07", "Пицца", Ink.hex(0x7E79E8)),
+        ("funny08", "Морковка", Ink.hex(0x7E79E8)),
+        ("funny09", "Мышь-космонавт", Ink.hex(0x7E79E8)),
+        ("funny10", "Волшебная палочка", Ink.hex(0x7E79E8)),
+        ("funny11", "Nyan Cat", Ink.hex(0x7E79E8)),
+        ("funny12", "Космическое зелье", Ink.hex(0x7E79E8)),
+        ("funny13", "Северное сияние", Ink.hex(0x7E79E8)),
+        ("funny14", "Six Seven", Ink.hex(0x7E79E8)),
+        ("funny16", "Это голубь?", Ink.hex(0x7E79E8)),
+        ("funny17", "Забери мои деньги", Ink.hex(0x7E79E8)),
+        ("funny18", "Бирюзовый пиксель", Ink.hex(0x31B6D2)),
+        ("funny19", "Розовый пиксель", Ink.hex(0xDF53B6)),
+        ("funny20", "Помни", Ink.hex(0xE74A5A)),
+        ("squeaky", "Резиновая игрушка", Ink.hex(0xE67F98)),
+        ("rocket", "Карманная ракета", Ink.hex(0x3284B4)),
+        ("paw", "Лапка", Ink.hex(0xD78461)),
+        ("lavender", "Лавандовая рука", Ink.purple),
+        ("glove", "Перчатка", Ink.purple),
+        ("coral", "Коралловая рука", Ink.red),
+        ("plush", "Плюшевая рука", Ink.hex(0x2F86F0)),
+        ("robot", "Робот", Ink.hex(0x16A87A)),
+        ("pink", "Жвачка", Ink.hex(0xEE4F98)),
+        ("blue", "Небо", Ink.hex(0x2F86F0)),
+        ("mint", "Мята", Ink.hex(0x16A87A)),
+        ("lemon", "Лимон", Ink.hex(0xF2B705)),
+        ("black", "Полночь", Ink.hex(0x1D1D21)),
+        ("chrome", "Хром", Ink.hex(0x6B7380)),
+        ("holo", "Голограмма", Ink.purple),
+        ("fuzzy", "Пушистая", Ink.purple),
+        ("wood", "Дерево", Ink.hex(0x9A5E2C)),
+        ("marble", "Мрамор", Ink.hex(0x6B7380)),
+        ("terrazzo", "Терраццо", Ink.hex(0xF0561D)),
+        ("glass", "Стекло", Ink.hex(0x1597E5)),
+        ("jelly", "Желе", Ink.hex(0xA33FE6)),
+        ("pastel", "Пастель", Ink.hex(0xEE4F98)),
+        ("pixel", "Пиксель", Ink.hex(0x1D1D21)),
+        ("lowpoly", "Полигональная", Ink.purple),
+        ("knit", "Вязаная", Ink.purple),
+        ("skeleton", "Скелет", Ink.hex(0x9A5E2C)),
+        ("astro", "Космонавт", Ink.hex(0x2F86F0)),
+        ("space", "Космос", Ink.red),
+        ("monster", "Монстр", Ink.hex(0x3E9E2E)),
+        ("water", "Вода", Ink.hex(0x1597E5)),
+        ("lava", "Лава", Ink.hex(0xF0561D)),
+        ("grass", "Трава", Ink.hex(0x3E9E2E)),
+        ("cactus", "Кактус", Ink.hex(0x3E9E2E)),
+        ("choco", "Шоколад", Ink.hex(0x9A5E2C)),
+        ("cloud", "Облако", Ink.hex(0x2F86F0)),
+        ("mech", "Механизм", Ink.hex(0xF0561D)),
+        ("neon", "Неон", Ink.hex(0xE0309A)),
+        ("leaf", "Лист", Ink.hex(0x3E9E2E)),
+        ("cookie", "Пряник", Ink.hex(0x9A5E2C)),
     ]
 
     static var builtInHands: [PointerStyle] {
         builtIn.map { PointerStyle($0.id) }
     }
+
+    static var catStyles: [PointerStyle] { builtInHands.filter { $0.rawValue.hasPrefix("cat") } }
+    static var funStyles: [PointerStyle] { builtInHands.filter { $0.rawValue.hasPrefix("funny") } }
+    static var originalStyles: [PointerStyle] { builtInHands.filter { !$0.rawValue.hasPrefix("cat") && !$0.rawValue.hasPrefix("funny") } }
 
     static var customHands: [PointerStyle] {
         CustomHands.all.map { PointerStyle($0.id) }
@@ -80,13 +113,15 @@ struct PointerStyle: Hashable {
 
     static let defaultPinned: [PointerStyle] = [.squeaky, .rocket, .paw, .lavender, .glove, .laser]
 
+    var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" }
+
     var isCustom: Bool {
         CustomHands.hand(rawValue) != nil
     }
 
     var title: String {
         if self == .laser {
-            return "Laser dot"
+            return "Лазерная точка"
         }
         if let custom = CustomHands.hand(rawValue) {
             return custom.name
@@ -101,6 +136,7 @@ struct PointerStyle: Hashable {
         if isCustom {
             return rawValue
         }
+        if rawValue == "funny16" { return "hand_funny16_v2" }
         if rawValue == "rocket" { return "hand_rocket_3d" }
         if rawValue == "paw" { return "hand_paw_3d_v3" }
         return "hand_\(rawValue)"
@@ -154,7 +190,7 @@ struct HandAsset {
             touch(name)
             return hit
         }
-        guard let image = loadImage(name), let asset = measure(image) else {
+        guard let image = loadImage(name), let asset = measure(image, named: name) else {
             return nil
         }
         cache[name] = asset
@@ -192,7 +228,7 @@ struct HandAsset {
             var built: [(String, NSImage)] = []
             for name in missing {
                 autoreleasepool {
-                    if let thumb = loadImage(name).flatMap(measure)?.thumbnail {
+                    if let image = loadImage(name), let thumb = measure(image, named: name)?.thumbnail {
                         built.append((name, thumb))
                     }
                 }
@@ -210,7 +246,7 @@ struct HandAsset {
         if let hit = thumbnails[name] {
             return hit
         }
-        let asset = cache[name] ?? loadImage(name).flatMap(measure)
+        let asset = cache[name] ?? loadImage(name).flatMap { measure($0, named: name) }
         guard let thumb = asset?.thumbnail else {
             return nil
         }
@@ -255,6 +291,39 @@ struct HandAsset {
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return ctx.makeImage()
+    }
+
+    private static func measure(_ image: CGImage, named name: String) -> HandAsset? {
+        if name == "hand_funny18" || name == "hand_funny19" { return measureStandalone(image) }
+        return measure(image)
+    }
+
+    // Standalone cursors have no rod; their uppermost opaque pixel is the hotspot.
+    private static func measureStandalone(_ image: CGImage) -> HandAsset? {
+        let w = image.width, h = image.height
+        var alpha = [UInt8](repeating: 0, count: w * h)
+        guard let ctx = CGContext(data: &alpha, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return nil }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var minX = w, maxX = -1, top = h, bottom = -1
+        for y in 0..<h {
+            for x in 0..<w where alpha[y * w + x] > 128 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                top = min(top, y); bottom = max(bottom, y)
+            }
+        }
+        guard bottom > top, maxX >= minX else { return nil }
+        var tipMin = w, tipMax = -1
+        for x in 0..<w where alpha[top * w + x] > 128 { tipMin = min(tipMin, x); tipMax = max(tipMax, x) }
+        guard tipMax >= tipMin else { return nil }
+        let wf = CGFloat(w), hf = CGFloat(h)
+        let tipX = (CGFloat(tipMin + tipMax) / 2 + 0.5) / wf
+        let tipY = (CGFloat(top) + 0.5) / hf
+        return HandAsset(image: image, aspect: wf / hf, handTop: CGFloat(top) / hf,
+                         tip: tipY, wrist: CGFloat(bottom + 1) / hf,
+                         rodEnd: CGFloat(bottom + 1) / hf, tipX: tipX, rodX: tipX,
+                         handMinX: CGFloat(minX) / wf, handMaxX: CGFloat(maxX + 1) / wf)
     }
 
     private static func measure(_ image: CGImage) -> HandAsset? {

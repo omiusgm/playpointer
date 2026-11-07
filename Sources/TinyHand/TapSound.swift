@@ -6,12 +6,12 @@ enum TapSoundChoice: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .thock: return "Thock"
-        case .click: return "Click"
-        case .pop: return "Pop"
-        case .wood: return "Wood block"
-        case .boop: return "Boop"
-        case .squeak: return "Squeak"
+        case .thock: return "Стук"
+        case .click: return "Щелчок"
+        case .pop: return "Хлопок"
+        case .wood: return "По дереву"
+        case .boop: return "Бип"
+        case .squeak: return "Писк"
         }
     }
 }

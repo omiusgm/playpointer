@@ -29,8 +29,7 @@ if let idx = CommandLine.arguments.firstIndex(of: "--toolbar-test") {
         print("rendered \(out)")
     }
     if CommandLine.arguments.contains("--hint") {
-        bar.showHint(drawing ? [("Click", "to tap"), ("Drag", "to draw"), ("Esc", "to exit")]
-            : [("Control", "to use apps"), ("Draw", "to annotate"), ("Esc", "to exit")])
+        bar.showHint(Toolbar.hintParts(for: drawing ? .draw : .control))
         if let data = bar.snapshotHint()?.representation(using: .png, properties: [:]) {
             let hintOut = out.replacingOccurrences(of: ".png", with: "-hint.png")
             try? data.write(to: URL(fileURLWithPath: hintOut))
@@ -50,7 +49,8 @@ if let idx = CommandLine.arguments.firstIndex(of: "--settings-test") {
     let out = CommandLine.arguments.count > idx + 1 ? CommandLine.arguments[idx + 1] : "/tmp/settings.png"
     let section = CommandLine.arguments.count > idx + 2 ? SettingsSection(rawValue: CommandLine.arguments[idx + 2]) ?? .general : .general
     let dark = ProcessInfo.processInfo.environment["TH_DARK"] != nil
-    if let image = SettingsWindow().snapshot(section, dark: dark),
+    let snapshotWindow = SettingsWindow()
+    if let image = snapshotWindow.snapshot(section, dark: dark),
        let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
         try? data.write(to: URL(fileURLWithPath: out))
         print("rendered \(out)")
@@ -85,6 +85,22 @@ if let idx = CommandLine.arguments.firstIndex(of: "--make-hand"), CommandLine.ar
         exit(1)
     }
     exit(0)
+}
+
+if CommandLine.arguments.contains("--asset-test") {
+    let styles = PointerStyle.catStyles + PointerStyle.funStyles
+    var failed = false
+    for style in styles {
+        guard let name = style.assetName, let asset = HandAsset.load(name),
+              asset.tip >= 0, asset.tip < 1, asset.tipX >= 0, asset.tipX <= 1,
+              asset.wrist > asset.handTop else {
+            print("FAIL: \(style.rawValue) asset or hotspot")
+            failed = true
+            continue
+        }
+    }
+    if !failed { print("PASS \(styles.count) cursor assets and hotspot geometry") }
+    exit(failed ? 1 : 0)
 }
 
 if CommandLine.arguments.contains("--input-test") {

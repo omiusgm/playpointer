@@ -7,6 +7,12 @@ struct Shortcut: Equatable {
     var modifiers: UInt32
     var display: String
 
+    var localizedDisplay: String {
+        // Keep the stored label compatible with previous versions.
+        guard keyCode == UInt32(kVK_Space), display.hasSuffix("Space") else { return display }
+        return String(display.dropLast("Space".count)) + "␣"
+    }
+
     static let toggleDefault = Shortcut(keyCode: UInt32(kVK_ANSI_H), modifiers: UInt32(controlKey | optionKey), display: "⌃⌥H")
     static let clearDefault = Shortcut(keyCode: UInt32(kVK_ANSI_X), modifiers: UInt32(controlKey | optionKey), display: "⌃⌥X")
 }
@@ -16,8 +22,8 @@ enum PointerMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .control: return "Control"
-        case .draw: return "Draw"
+        case .control: return "Управление"
+        case .draw: return "Рисование"
         }
     }
 }
@@ -30,7 +36,7 @@ enum InteractKey: String, CaseIterable {
         case .option: return "⌥ Option"
         case .command: return "⌘ Command"
         case .control: return "⌃ Control"
-        case .off: return "Off"
+        case .off: return "Выкл."
         }
     }
 
@@ -58,15 +64,15 @@ enum InkChoice: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .match: return "Match the pointer"
-        case .red: return "Red"
-        case .orange: return "Orange"
-        case .yellow: return "Yellow"
-        case .green: return "Green"
-        case .blue: return "Blue"
-        case .purple: return "Purple"
-        case .white: return "White"
-        case .black: return "Black"
+        case .match: return "Цвет указателя"
+        case .red: return "Красный"
+        case .orange: return "Оранжевый"
+        case .yellow: return "Жёлтый"
+        case .green: return "Зелёный"
+        case .blue: return "Синий"
+        case .purple: return "Фиолетовый"
+        case .white: return "Белый"
+        case .black: return "Чёрный"
         }
     }
 

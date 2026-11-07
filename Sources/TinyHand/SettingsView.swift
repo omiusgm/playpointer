@@ -9,12 +9,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return "General"
-        case .pointers: return "Pointers"
-        case .appearance: return "Appearance"
-        case .drawing: return "Drawing"
-        case .sound: return "Sound"
-        case .about: return "About"
+        case .general: return "Основные"
+        case .pointers: return "Указатели"
+        case .appearance: return "Внешний вид"
+        case .drawing: return "Рисование"
+        case .sound: return "Звук"
+        case .about: return "О программе"
         }
     }
 
@@ -113,7 +113,8 @@ final class SettingsModel: ObservableObject {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .webP, .image]
         panel.allowsMultipleSelection = false
-        panel.message = "Pick the PNG of your hand"
+        panel.message = "Выберите PNG с изображением руки"
+        panel.prompt = "Выбрать"
         guard panel.runModal() == .OK, let url = panel.url else {
             return
         }
@@ -131,7 +132,7 @@ final class SettingsModel: ObservableObject {
             draftError = problem.message
         } catch {
             draft = nil
-            draftError = "PlayPointer couldn't read that file."
+            draftError = "Не удалось открыть файл."
         }
     }
 
@@ -148,18 +149,22 @@ final class SettingsModel: ObservableObject {
             if pinned.count < Preferences.maxPinned {
                 pinned.insert(style, at: max(0, pinned.count - (pinned.last == .laser ? 1 : 0)))
                 Preferences.pinnedStyles = pinned
-                handMessage = "\(style.title) is in your toolbar."
+                handMessage = "«\(style.title)» добавлено на панель."
             } else {
-                handMessage = "\(style.title) is ready. Click it to add it to the toolbar."
+                handMessage = "Готово. Нажмите на «\(style.title)», чтобы добавить на панель."
             }
-            PointerStyle.saved = style
-            NotificationCenter.default.post(name: Preferences.changed, object: nil)
+            selectPointer(style)
             self.draft = nil
             handIdea = ""
             makingHand = false
         } catch {
-            draftError = "PlayPointer couldn't save that hand."
+            draftError = "Не удалось сохранить указатель."
         }
+    }
+
+    func selectPointer(_ style: PointerStyle) {
+        PointerStyle.saved = style
+        NotificationCenter.default.post(name: Preferences.changed, object: nil)
     }
 
     func removeHand(_ style: PointerStyle) {
@@ -241,10 +246,10 @@ final class SettingsModel: ObservableObject {
 
     func resetAll() {
         let alert = NSAlert()
-        alert.messageText = "Reset all settings?"
-        alert.informativeText = "Shortcuts, toolbar pointers, size, shadow, drawing and sound go back to how they were at first. Open at login and Accessibility stay as they are."
-        alert.addButton(withTitle: "Reset")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = "Сбросить настройки?"
+        alert.informativeText = "Будут восстановлены исходные сочетания клавиш, набор указателей и параметры внешнего вида, рисования и звука. Автозапуск и разрешение универсального доступа сохранятся."
+        alert.addButton(withTitle: "Сбросить")
+        alert.addButton(withTitle: "Отмена")
         guard alert.runModal() == .alertFirstButtonReturn else {
             return
         }
@@ -271,7 +276,7 @@ final class SettingsModel: ObservableObject {
             return
         }
         if pinned.count >= Preferences.maxPinned {
-            pinMessage = "The toolbar is full. Remove one above to add \(style.title)."
+            pinMessage = "Освободите место на панели, чтобы добавить «\(style.title)»."
             return
         }
         pinned.append(style)
@@ -299,7 +304,7 @@ final class SettingsModel: ObservableObject {
             return
         }
         if pinned.count == 1 {
-            pinMessage = "Keep at least one pointer in the toolbar."
+            pinMessage = "На панели должен остаться хотя бы один указатель."
             return
         }
         pinned.remove(at: i)
@@ -357,7 +362,7 @@ struct SettingsView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                            Text("Pointers").font(.system(size: 12, weight: .medium))
+                            Text(SettingsSection.pointers.title).font(.system(size: 12, weight: .medium))
                         }
                         .foregroundColor(.secondary)
                     }
@@ -365,7 +370,7 @@ struct SettingsView: View {
                     .focusable(false)
                     .padding(.bottom, -14)
                 }
-                Text(model.section == .pointers && model.makingHand ? "Make your own hand" : model.section.title)
+                Text(model.section == .pointers && model.makingHand ? "Создать свою руку" : model.section.title)
                     .font(.system(size: 22, weight: .bold))
                     .padding(.top, 6)
                 content
@@ -403,9 +408,9 @@ private struct GeneralPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             if !AXIsProcessTrusted() {
-                Card(title: "Permission") {
-                    Row("Accessibility", detail: "Draw mode requires permission to capture mouse clicks.") {
-                        PillButton(title: "Open Settings") {
+                Card(title: "Разрешение") {
+                    Row("Универсальный доступ", detail: "Разрешите PlayPointer обрабатывать нажатия мыши для рисования.") {
+                        PillButton(title: "Открыть настройки") {
                             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                                 NSWorkspace.shared.open(url)
                             }
@@ -413,22 +418,22 @@ private struct GeneralPage: View {
                     }
                 }
             }
-            Card(title: "Shortcuts") {
-                Row("Turn the pointer on or off") {
+            Card(title: "Сочетания клавиш") {
+                Row("Включить или выключить указатель") {
                     ShortcutField(shortcut: Preferences.toggleShortcut, model: model) { model.applyToggleShortcut?($0) ?? false }
                 }
-                Row("Clear the drawing") {
+                Row("Стереть рисунок") {
                     ShortcutField(shortcut: Preferences.clearShortcut, model: model) { model.applyClearShortcut?($0) ?? false }
                 }
             }
             if let error = model.shortcutError {
                 Text(error).font(.system(size: 12)).foregroundColor(.red)
             }
-            Card(title: "Pointer mode") {
-                Row("Mode", detail: Preferences.pointerMode == .control
-                    ? "Click, drag and scroll in your apps."
-                    : "Drag to draw on the screen.") {
-                    Picker("Pointer mode", selection: model.binding({ Preferences.pointerMode }, { model.applyPointerMode?($0) })) {
+            Card(title: "Режим указателя") {
+                Row("Режим", detail: Preferences.pointerMode == .control
+                    ? "Щёлкайте, перетаскивайте и прокручивайте в приложениях."
+                    : "Рисуйте на экране, удерживая кнопку мыши.") {
+                    Picker("Режим указателя", selection: model.binding({ Preferences.pointerMode }, { model.applyPointerMode?($0) })) {
                         ForEach(PointerMode.allCases, id: \.self) { mode in
                             Text(mode.title).tag(mode)
                         }
@@ -438,7 +443,7 @@ private struct GeneralPage: View {
                     .fixedSize()
                     .focusable(false)
                 }
-                Row("Hold to use apps while drawing", detail: "Clicks and drags reach the app while you hold this key.") {
+                Row("Клавиша для работы с приложениями", detail: "Удерживайте при рисовании, чтобы щёлкать и перетаскивать.") {
                     Picker("", selection: model.binding({ Preferences.interactKey }, { Preferences.interactKey = $0 })) {
                         ForEach(InteractKey.allCases, id: \.self) { key in
                             Text(key.title).tag(key)
@@ -450,10 +455,10 @@ private struct GeneralPage: View {
                     .focusable(false)
                 }
                 if Preferences.interactKey != .off {
-                    Row("While holding", detail: Preferences.interactKeepsHand ? "The hand stays, in menus too." : "The normal cursor comes back, in menus too.") {
+                    Row("Вид указателя при удержании", detail: Preferences.interactKeepsHand ? "Рука видна и в меню." : "Обычный курсор виден и в меню.") {
                         Picker("", selection: model.binding({ Preferences.interactKeepsHand }, { Preferences.interactKeepsHand = $0 })) {
-                            Text("Show the cursor").tag(false)
-                            Text("Keep the hand").tag(true)
+                            Text("Обычный курсор").tag(false)
+                            Text("Рука").tag(true)
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
@@ -462,13 +467,13 @@ private struct GeneralPage: View {
                     }
                 }
             }
-            Card(title: "Startup") {
-                Row("Open PlayPointer when you log in") {
+            Card(title: "Автозапуск") {
+                Row("Запускать PlayPointer при входе") {
                     Toggle("", isOn: model.binding({ Preferences.launchAtLogin }, { Preferences.launchAtLogin = $0 }))
                         .toggleStyle(.switch).labelsHidden().focusable(false)
                 }
                 if let updater = model.updater {
-                    Row("Check for updates automatically") {
+                    Row("Проверять обновления автоматически") {
                         Toggle("", isOn: model.binding({ updater.automaticallyChecks }, { updater.automaticallyChecks = $0 }))
                             .toggleStyle(.switch).labelsHidden().focusable(false)
                     }
@@ -484,7 +489,8 @@ private struct PointersPage: View {
     @State private var dragX: CGFloat = 0
     @State private var dragStart = 0
     @State private var floating: Floating?
-    @State private var picking = false
+    @State private var choosingPointer = false
+    @State private var addingToToolbar = false
 
     struct Floating {
         let style: PointerStyle
@@ -539,7 +545,7 @@ private struct PointersPage: View {
             dragX = 0
             if floating != nil && !removing {
                 model.cancelDrag()
-                model.pinMessage = "Keep at least one pointer in the toolbar."
+                model.pinMessage = "На панели должен остаться хотя бы один указатель."
             } else {
                 model.endDrag()
             }
@@ -558,13 +564,21 @@ private struct PointersPage: View {
         let pinned = model.pinnedOrder
         let full = Preferences.pinnedStyles.count >= Preferences.maxPinned
         VStack(alignment: .leading, spacing: 30) {
+            Card(title: nil) {
+                Row("Текущий указатель", detail: PointerStyle.saved.title) {
+                    PillButton(title: "Выбрать указатель…") { choosingPointer = true }
+                        .popover(isPresented: $choosingPointer, arrowEdge: .bottom) {
+                            PointerPicker(model: model, purpose: .select) { choosingPointer = false }
+                        }
+                }
+            }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("In your toolbar")
+                    Text("На панели")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.secondary)
                     Spacer()
-                    TextButton(title: "Reset") { model.resetToolbar() }
+                    TextButton(title: "Сбросить") { model.resetToolbar() }
                 }
                 .padding(.horizontal, 4)
                 HStack(spacing: 6) {
@@ -576,9 +590,9 @@ private struct PointersPage: View {
                             .transaction { if lifted { $0.animation = nil } }
                     }
                     if !full {
-                        AddSlot(open: $picking)
-                            .popover(isPresented: $picking, arrowEdge: .bottom) {
-                                PointerPicker(model: model) { picking = false }
+                        AddSlot(open: $addingToToolbar)
+                            .popover(isPresented: $addingToToolbar, arrowEdge: .bottom) {
+                                PointerPicker(model: model, purpose: .pin) { addingToToolbar = false }
                             }
                     }
                     ForEach(0..<max(0, Preferences.maxPinned - pinned.count - 1), id: \.self) { _ in
@@ -602,8 +616,8 @@ private struct PointersPage: View {
                         .onEnded { _ in dropDrag() }
                 )
                 Text(full
-                     ? "The toolbar is full. Remove a pointer to add another. Drag to reorder."
-                     : "Press + to add a pointer. Drag to reorder, or out to remove.")
+                     ? "Освободите место на панели, чтобы закрепить новый указатель. Значки можно переставлять."
+                     : "Кнопка + закрепляет указатель. Перетащите значок для перестановки или вынесите его за пределы панели.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 4)
@@ -649,62 +663,70 @@ private struct AddSlot: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .help("Add a pointer")
+        .help("Закрепить указатель")
         .onHover { hovering = $0 }
     }
 }
 
 private struct PointerPicker: View {
+    enum Purpose {
+        case select, pin
+    }
+
     @ObservedObject var model: SettingsModel
+    let purpose: Purpose
     let done: () -> Void
     private let columns = [GridItem(.adaptive(minimum: 64, maximum: 72), spacing: 4)]
 
     var body: some View {
-        let pinned = Set(Preferences.pinnedStyles)
+        let pinned = purpose == .pin ? Set(Preferences.pinnedStyles) : []
+        let selected = purpose == .select ? PointerStyle.saved : nil
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    section(nil, PointerStyle.builtInHands + [.laser], pinned)
+                    section("Кошачьи лапки", PointerStyle.catStyles, pinned, selected)
+                    section("Забавные указатели", PointerStyle.funStyles, pinned, selected)
+                    section("Остальные", PointerStyle.originalStyles + [.laser], pinned, selected)
                     if !PointerStyle.customHands.isEmpty {
-                        section("Your hands", PointerStyle.customHands, pinned)
+                        section("Свои", PointerStyle.customHands, pinned, selected)
                     }
                 }
                 .padding(12)
             }
             .frame(height: 340)
-            Divider()
-            Button {
-                done()
-                model.startMakingHand()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "wand.and.stars").font(.system(size: 11))
-                    Text("Make your own hand…").font(.system(size: 12))
-                    Spacer()
+            if purpose == .pin {
+                Divider()
+                Button {
+                    done()
+                    model.startMakingHand()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wand.and.stars").font(.system(size: 11))
+                        Text("Создать свою руку…").font(.system(size: 12))
+                        Spacer()
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
                 }
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .focusable(false)
             }
-            .buttonStyle(.plain)
-            .focusable(false)
         }
         .frame(width: 400)
     }
 
-    private func section(_ title: String?, _ styles: [PointerStyle], _ pinned: Set<PointerStyle>) -> some View {
+    private func section(_ title: String, _ styles: [PointerStyle], _ pinned: Set<PointerStyle>, _ selected: PointerStyle?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let title = title {
-                Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).padding(.leading, 4)
-            }
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).padding(.leading, 4)
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(styles, id: \.self) { style in
-                    PickerCell(style: style, added: pinned.contains(style)) {
-                        guard !pinned.contains(style) else {
-                            return
+                    PickerCell(style: style, added: pinned.contains(style), selected: style == selected) {
+                        switch purpose {
+                        case .select: model.selectPointer(style)
+                        case .pin: model.pin(style)
                         }
-                        model.pin(style)
                         done()
                     }
                 }
@@ -716,6 +738,7 @@ private struct PointerPicker: View {
 private struct PickerCell: View {
     let style: PointerStyle
     let added: Bool
+    let selected: Bool
     let action: () -> Void
     @State private var hovering = false
 
@@ -729,14 +752,17 @@ private struct PickerCell: View {
             .frame(width: 62, height: 58)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(hovering && !added ? 0.08 : 0))
+                    .fill(selected ? Color.accentColor.opacity(0.16) : Color.primary.opacity(hovering && !added ? 0.08 : 0))
             )
             .opacity(added ? 0.35 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .help(added ? "\(style.title) is already in the toolbar" : style.title)
+        .disabled(added)
+        .accessibilityLabel(style.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .help(added ? "«\(style.title)» уже на панели" : style.title)
         .onHover { hovering = $0 }
     }
 }
@@ -747,15 +773,15 @@ private struct YourHands: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Your hands")
+                Text("Мои руки")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.secondary)
                 Spacer()
-                TextButton(title: "Make your own…") { model.startMakingHand() }
+                TextButton(title: "Создать руку…") { model.startMakingHand() }
             }
             .padding(.horizontal, 4)
             if PointerStyle.customHands.isEmpty {
-                Text("Turn any idea into a hand with ChatGPT or another image tool.")
+                Text("Создайте свою руку в ChatGPT или другом генераторе изображений.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 4)
@@ -799,7 +825,7 @@ private struct CustomHandChip: View {
             .buttonStyle(.plain)
             .focusable(false)
             .opacity(hovering ? 1 : 0)
-            .help("Delete \(style.title)")
+            .help("Удалить «\(style.title)»")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
@@ -816,10 +842,10 @@ private struct CustomHandChip: View {
             }
         }
         .onHover { hovering = $0 }
-        .help(pinned ? "\(style.title) is in your toolbar" : "Click to add \(style.title) to the toolbar")
+        .help(pinned ? "«\(style.title)» на панели" : "Добавить «\(style.title)» на панель")
         .popover(isPresented: $swapping, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("The toolbar is full. Swap \(style.title) in for:")
+                Text("Панель заполнена. Выберите, что заменить на «\(style.title)».")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                 HStack(spacing: 4) {
@@ -854,7 +880,7 @@ private struct SwapCell: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .help("Replace \(style.title)")
+        .help("Заменить «\(style.title)»")
         .onHover { hovering = $0 }
     }
 }
@@ -923,7 +949,7 @@ private struct ToolbarSlot: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
-                .help("Remove from the toolbar")
+                .help("Убрать с панели")
                 .offset(x: 5, y: -5)
             }
         }
@@ -946,8 +972,8 @@ private struct AppearancePage: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        Card(title: "Pointer") {
-            Row("Size") {
+        Card(title: "Указатель") {
+            Row("Размер") {
                 HStack(spacing: 10) {
                     Image(systemName: "hand.point.up.left.fill").font(.system(size: 10)).foregroundColor(.secondary)
                     Slider(value: model.binding({ Double(Preferences.pointerSize) }, { Preferences.pointerSize = CGFloat($0) }),
@@ -957,7 +983,7 @@ private struct AppearancePage: View {
                     Image(systemName: "hand.point.up.left.fill").font(.system(size: 16)).foregroundColor(.secondary)
                 }
             }
-            Row("Shadow under the pointer") {
+            Row("Тень под указателем") {
                 Toggle("", isOn: model.binding({ Preferences.showShadow }, { Preferences.showShadow = $0 }))
                     .toggleStyle(.switch).labelsHidden().focusable(false)
             }
@@ -968,15 +994,15 @@ private struct AppearancePage: View {
 private struct DrawingPage: View {
     @ObservedObject var model: SettingsModel
     private static let choices: [(String, Double)] = [
-        ("After 3 seconds", 3),
-        ("After 6 seconds", 6),
-        ("After 10 seconds", 10),
-        ("Keep until cleared", 0),
+        ("Через 3 секунды", 3),
+        ("Через 6 секунд", 6),
+        ("Через 10 секунд", 10),
+        ("Только вручную", 0),
     ]
 
     var body: some View {
-        Card(title: "Ink") {
-            Row("Ink colour", detail: Preferences.inkChoice == .match ? "Matches each pointer." : "All pointers draw in \(Preferences.inkChoice.title.lowercased()).") {
+        Card(title: "Линии") {
+            Row("Цвет линий", detail: Preferences.inkChoice == .match ? "Как у указателя." : "Для всех указателей выбран цвет «\(Preferences.inkChoice.title.lowercased())».") {
                 HStack(spacing: 8) {
                     ForEach(InkChoice.allCases, id: \.self) { choice in
                         InkSwatch(choice: choice, selected: Preferences.inkChoice == choice) {
@@ -986,7 +1012,7 @@ private struct DrawingPage: View {
                     }
                 }
             }
-            Row("Lines fade", detail: "Clear them any time with \(Preferences.clearShortcut.display).") {
+            Row("Стирание линий", detail: "Стереть вручную можно клавишами \(Preferences.clearShortcut.localizedDisplay).") {
                 Picker("", selection: model.binding({ Preferences.fadeSeconds }, { Preferences.fadeSeconds = $0 })) {
                     ForEach(DrawingPage.choices, id: \.1) { choice in
                         Text(choice.0).tag(choice.1)
@@ -997,7 +1023,7 @@ private struct DrawingPage: View {
                 .fixedSize()
                 .focusable(false)
             }
-            Row("Ink button in the toolbar", detail: "Change the colour while you present.") {
+            Row("Кнопка цвета на панели", detail: "Меняйте цвет прямо во время показа.") {
                 Toggle("", isOn: model.binding({ Preferences.showInkButton }, { Preferences.showInkButton = $0 }))
                     .toggleStyle(.switch).labelsHidden().focusable(false)
             }
@@ -1013,12 +1039,12 @@ private struct SoundPage: View {
         let on = Preferences.handSound
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Tap sound")
+                Text("Звук касания")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 4)
                 LazyVGrid(columns: columns, spacing: 8) {
-                    SoundTile(title: "Off", symbol: "speaker.slash.fill", selected: !on) {
+                    SoundTile(title: "Без звука", symbol: "speaker.slash.fill", selected: !on) {
                         Preferences.handSound = false
                         model.refresh()
                     }
@@ -1031,13 +1057,13 @@ private struct SoundPage: View {
                         }
                     }
                 }
-                Text("Click a sound to hear it. It plays each time the hand taps.")
+                Text("Выберите звук, чтобы прослушать его. Он звучит при каждом касании.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 4)
             }
             Card(title: nil) {
-                Row("Laser dot taps too", detail: "Off by default, for quiet pointing.") {
+                Row("Звук лазерной точки", detail: "По умолчанию лазерная точка работает без звука.") {
                     Toggle("", isOn: model.binding({ Preferences.laserSound }, { Preferences.laserSound = $0 }))
                         .toggleStyle(.switch).labelsHidden().focusable(false)
                         .disabled(!on)
@@ -1119,7 +1145,7 @@ private struct AboutPage: View {
     @ObservedObject var model: SettingsModel
 
     var body: some View {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "разработка"
         VStack(alignment: .leading, spacing: 22) {
             HStack(spacing: 16) {
                 if let icon = NSImage(named: "AppIcon") ?? NSApp.applicationIconImage {
@@ -1127,23 +1153,23 @@ private struct AboutPage: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("PlayPointer").font(.system(size: 18, weight: .bold))
-                    Text("Version \(version)").font(.system(size: 12)).foregroundColor(.secondary)
-                    Text("A tiny hand for your Mac. Free and open source.").font(.system(size: 12)).foregroundColor(.secondary)
+                    Text("Версия \(version)").font(.system(size: 12)).foregroundColor(.secondary)
+                    Text("Рука-указатель для Mac. Бесплатно и с открытым кодом.").font(.system(size: 12)).foregroundColor(.secondary)
                 }
                 Spacer()
                 if let updater = model.updater {
-                    PillButton(title: "Check for Updates") { updater.checkForUpdates() }
+                    PillButton(title: "Проверить обновления") { updater.checkForUpdates() }
                 }
             }
             Card(title: nil) {
-                LinkRow(title: "Original project", detail: "tinyhand.app", url: "https://tinyhand.app")
-                LinkRow(title: "Source code", detail: "github.com/omiusgm/playpointer", url: "https://github.com/omiusgm/playpointer")
-                LinkRow(title: "Original author", detail: "@nilbuild on X", url: "https://x.com/nilbuild")
-                LinkRow(title: "License", detail: "MIT", url: "https://github.com/omiusgm/playpointer/blob/main/LICENSE")
+                LinkRow(title: "Исходный проект", detail: "tinyhand.app", url: "https://tinyhand.app")
+                LinkRow(title: "Исходный код", detail: "github.com/omiusgm/playpointer", url: "https://github.com/omiusgm/playpointer")
+                LinkRow(title: "Автор оригинала", detail: "@nilbuild в X", url: "https://x.com/nilbuild")
+                LinkRow(title: "Лицензия", detail: "MIT", url: "https://github.com/omiusgm/playpointer/blob/main/LICENSE")
             }
             HStack {
                 Spacer()
-                TextButton(title: "Reset all settings…") { model.resetAll() }
+                TextButton(title: "Сбросить настройки…") { model.resetAll() }
             }
         }
     }
@@ -1329,19 +1355,19 @@ private struct MakeHandPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
-            Step(number: 1, title: "Describe it", detail: "What should your hand look like?") {
-                PlainField(placeholder: "e.g. knitted wool in mustard yellow", text: $model.handIdea)
+            Step(number: 1, title: "Опишите руку", detail: "Какой она должна быть?") {
+                PlainField(placeholder: "Например, из горчичной пряжи", text: $model.handIdea)
                     .frame(maxWidth: 420)
             }
-            Step(number: 2, title: "Make the image", detail: "Open it in ChatGPT, or copy the prompt for another image tool. Download the result as a PNG with a transparent background.") {
+            Step(number: 2, title: "Создайте изображение", detail: "Откройте запрос в ChatGPT или скопируйте его для другого генератора. Скачайте результат в PNG с прозрачным фоном.") {
                 HStack(spacing: 8) {
-                    PrimaryButton(title: "Open in ChatGPT", symbol: "arrow.up.right") { model.openChatGPT() }
-                    PrimaryButton(title: model.promptCopied ? "Copied" : "Copy prompt", symbol: model.promptCopied ? "checkmark" : "doc.on.doc", primary: false) {
+                    PrimaryButton(title: "Открыть в ChatGPT", symbol: "arrow.up.right") { model.openChatGPT() }
+                    PrimaryButton(title: model.promptCopied ? "Скопировано" : "Копировать запрос", symbol: model.promptCopied ? "checkmark" : "doc.on.doc", primary: false) {
                         model.copyPrompt()
                     }
                 }
             }
-            Step(number: 3, title: "Add it", detail: nil) {
+            Step(number: 3, title: "Добавьте изображение", detail: nil) {
                 if let draft = model.draft {
                     preview(draft)
                 } else {
@@ -1359,13 +1385,13 @@ private struct MakeHandPage: View {
                 Image(systemName: model.draftError == nil ? "square.and.arrow.down" : "exclamationmark.triangle")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(model.draftError == nil ? .secondary : .orange)
-                Text(model.draftError ?? "Drop the PNG here, or click to choose it")
+                Text(model.draftError ?? "Перетащите сюда PNG или щёлкните, чтобы выбрать файл")
                     .font(.system(size: 12))
                     .foregroundColor(model.draftError == nil ? .secondary : .primary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 if model.draftError != nil {
-                    Text("Try again with another image")
+                    Text("Щёлкните, чтобы выбрать другой файл")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -1413,18 +1439,18 @@ private struct MakeHandPage: View {
                 )
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Name").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
-                    PlainField(placeholder: "My hand", text: Binding(get: { model.handName }, set: { model.handName = String($0.prefix(16)) }))
+                    Text("Название").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                    PlainField(placeholder: "Моя рука", text: Binding(get: { model.handName }, set: { model.handName = String($0.prefix(16)) }))
                         .frame(width: 220)
                 }
-                Text("It should show the back of the hand, like the ones in PlayPointer. If you see the palm, try another image.")
+                Text("На изображении должна быть видна тыльная сторона кисти. Если видна ладонь, попробуйте другое изображение.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 300, alignment: .leading)
                 HStack(spacing: 10) {
-                    PrimaryButton(title: "Add hand", symbol: nil) { model.saveDraft() }
-                    TextButton(title: "Use another image") { model.chooseHandFile() }
+                    PrimaryButton(title: "Добавить руку", symbol: nil) { model.saveDraft() }
+                    TextButton(title: "Выбрать другое изображение") { model.chooseHandFile() }
                 }
             }
         }
@@ -1529,7 +1555,7 @@ private struct ShortcutField: NSViewRepresentable {
         r.onRecording = { model.onRecording?($0) }
         r.onChange = { s in
             let ok = apply(s)
-            model.shortcutError = ok ? nil : "\(s.display) is already used by another app. Pick a different shortcut."
+            model.shortcutError = ok ? nil : "Не удалось назначить \(s.localizedDisplay). Попробуйте другое сочетание."
             return ok
         }
         return r

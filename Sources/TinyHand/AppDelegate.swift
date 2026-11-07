@@ -65,17 +65,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.action = #selector(statusClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
-        let permission = NSMenuItem(title: "Allow Accessibility…", action: #selector(showWelcome), keyEquivalent: "")
+        let permission = NSMenuItem(title: "Разрешить универсальный доступ…", action: #selector(showWelcome), keyEquivalent: "")
         permissionItem = permission
         menu.addItem(permission)
         let toggle = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
         let clear = NSMenuItem(title: "", action: #selector(clearInk), keyEquivalent: "")
-        let sound = NSMenuItem(title: "Tap Sound", action: #selector(toggleSound), keyEquivalent: "")
+        let sound = NSMenuItem(title: "Звук касания", action: #selector(toggleSound), keyEquivalent: "")
         toggleItem = toggle
         clearItem = clear
         soundItem = sound
         menu.addItem(toggle)
-        let modeItem = NSMenuItem(title: "Pointer Mode", action: nil, keyEquivalent: "")
+        let modeItem = NSMenuItem(title: "Режим указателя", action: nil, keyEquivalent: "")
         let modes = NSMenu()
         for mode in PointerMode.allCases {
             let item = NSMenuItem(title: mode.title, action: #selector(selectMode(_:)), keyEquivalent: "")
@@ -89,12 +89,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(clear)
         menu.addItem(sound)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Настройки…", action: #selector(openSettings), keyEquivalent: ","))
         if Updater.isAvailable {
-            menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Проверить обновления…", action: #selector(checkForUpdates), keyEquivalent: ""))
         }
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit PlayPointer", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Выйти из PlayPointer", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
         menu.delegate = self
     }
@@ -140,8 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshMenu() {
         let on = overlay.isActive
-        toggleItem?.title = "\(on ? "Turn Pointer Off" : "Turn Pointer On")    \(Preferences.toggleShortcut.display)"
-        clearItem?.title = "Clear Drawing    \(Preferences.clearShortcut.display)"
+        toggleItem?.title = "\(on ? "Выключить указатель" : "Включить указатель")    \(Preferences.toggleShortcut.localizedDisplay)"
+        clearItem?.title = "Стереть рисунок    \(Preferences.clearShortcut.localizedDisplay)"
         soundItem?.state = overlay.soundOn ? .on : .off
         for (mode, item) in modeItems {
             item.state = Preferences.pointerMode == mode ? .on : .off
@@ -245,28 +245,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         image?.isTemplate = true
         statusItem.button?.image = image
         statusItem.button?.toolTip = overlay.isActive
-            ? "PlayPointer is on — click to turn off, right-click for the menu"
-            : "PlayPointer — click to turn on, right-click for the menu"
+            ? "PlayPointer включён. Щелчок выключит указатель. Правый щелчок откроет меню."
+            : "PlayPointer. Щелчок включит указатель. Правый щелчок откроет меню."
     }
 
     private func editingMenu() -> NSMenu {
         let main = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        appMenu.addItem(withTitle: "Quit PlayPointer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Закрыть окно", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        appMenu.addItem(withTitle: "Выйти из PlayPointer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
         let editItem = NSMenuItem()
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        let edit = NSMenu(title: "Правка")
+        edit.addItem(withTitle: "Отменить", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Повторить", action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: "Вырезать", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Скопировать", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Вставить", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Выбрать всё", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
         main.addItem(editItem)
         return main

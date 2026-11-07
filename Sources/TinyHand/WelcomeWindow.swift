@@ -20,9 +20,9 @@ final class WelcomeWindow: NSObject {
     private var forDrawing = false
     private var tapUnavailable = false
     private let title = NSTextField(labelWithString: "")
-    private let subtitle = NSTextField(labelWithString: "")
+    private let subtitle = NSTextField(wrappingLabelWithString: "")
     private let button = NSButton(title: "", target: nil, action: nil)
-    private let tip = NSTextField(labelWithString: "Already on? Remove it and add it again.")
+    private let tip = NSTextField(wrappingLabelWithString: "Уже включено? Удалите PlayPointer из списка и добавьте снова.")
 
     static let shownKey = "welcomeShown"
 
@@ -54,14 +54,18 @@ final class WelcomeWindow: NSObject {
 
     private func refresh() {
         if forDrawing {
-            title.stringValue = granted && !tapUnavailable ? "Ready to draw" : "Allow Accessibility"
-            subtitle.stringValue = "Draw mode needs access to mouse events."
-            button.title = granted && !tapUnavailable ? "Start Drawing" : "Open Settings"
-            tip.isHidden = !tapUnavailable && (granted || (askedAt.map { Date().timeIntervalSince($0) < 10 } ?? true))
+            let trusted = granted
+            let ready = trusted && !tapUnavailable
+            title.stringValue = ready ? "Можно рисовать" : "Универсальный доступ"
+            subtitle.stringValue = ready
+                ? "Рисуйте поверх открытых окон."
+                : "Разрешите PlayPointer обрабатывать нажатия мыши для рисования."
+            button.title = ready ? "Начать рисовать" : "Открыть настройки"
+            tip.isHidden = !tapUnavailable && (trusted || (askedAt.map { Date().timeIntervalSince($0) < 10 } ?? true))
         } else {
-            title.stringValue = "You're all set"
-            subtitle.stringValue = "Press \(Preferences.toggleShortcut.display) any time to start."
-            button.title = "Start"
+            title.stringValue = "Всё готово"
+            subtitle.stringValue = "Нажмите \(Preferences.toggleShortcut.localizedDisplay), чтобы включить указатель."
+            button.title = "Попробовать"
             tip.isHidden = true
         }
     }
@@ -98,6 +102,7 @@ final class WelcomeWindow: NSObject {
 
     private func build() {
         let size = CGSize(width: 340, height: 300)
+        let messageWidth = size.width - 52
         let w = Card(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         w.isOpaque = false
         w.backgroundColor = .clear
@@ -125,6 +130,8 @@ final class WelcomeWindow: NSObject {
         subtitle.font = NSFont.systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
         subtitle.alignment = .center
+        subtitle.preferredMaxLayoutWidth = messageWidth
+        subtitle.widthAnchor.constraint(equalToConstant: messageWidth).isActive = true
 
         button.target = self
         button.action = #selector(buttonPressed)
@@ -136,6 +143,8 @@ final class WelcomeWindow: NSObject {
         tip.font = NSFont.systemFont(ofSize: 11)
         tip.textColor = .secondaryLabelColor
         tip.alignment = .center
+        tip.preferredMaxLayoutWidth = messageWidth
+        tip.widthAnchor.constraint(equalToConstant: messageWidth).isActive = true
 
         let stack = NSStackView(views: [icon, title, subtitle, button, tip])
         stack.orientation = .vertical
@@ -147,7 +156,7 @@ final class WelcomeWindow: NSObject {
         stack.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(stack)
 
-        let closeButton = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")!,
+        let closeButton = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Закрыть")!,
                                    target: self, action: #selector(close))
         closeButton.isBordered = false
         closeButton.contentTintColor = .tertiaryLabelColor

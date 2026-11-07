@@ -71,7 +71,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 780, height: 560),
                          styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
-        w.title = "PlayPointer Settings"
+        w.title = "Настройки PlayPointer"
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         w.isReleasedWhenClosed = false
@@ -105,7 +105,7 @@ final class ShortcutRecorder: NSButton {
         wantsLayer = true
         layer?.cornerRadius = 7
         layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.05).cgColor
-        toolTip = "Click, then press the new shortcut. Esc cancels."
+        toolTip = "Щёлкните и нажмите новое сочетание клавиш. Esc отменяет запись."
         target = self
         action = #selector(startRecording)
         title = ""
@@ -119,7 +119,7 @@ final class ShortcutRecorder: NSButton {
             keys.centerXAnchor.constraint(equalTo: centerXAnchor),
             keys.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-        setLabel(shortcut.display)
+        setLabel(shortcut.localizedDisplay)
     }
 
     func show(_ s: Shortcut) {
@@ -127,7 +127,7 @@ final class ShortcutRecorder: NSButton {
             return
         }
         shortcut = s
-        setLabel(s.display)
+        setLabel(s.localizedDisplay)
     }
 
     private static let modifierSymbols: Set<Character> = ["⌃", "⌥", "⇧", "⌘"]
@@ -232,7 +232,7 @@ final class ShortcutRecorder: NSButton {
         guard monitor == nil else {
             return
         }
-        setLabel("Press keys", dim: true)
+        setLabel("Нажмите клавиши", dim: true)
         setRecordingLook(true)
         onRecording?(true)
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
@@ -242,7 +242,7 @@ final class ShortcutRecorder: NSButton {
             if event.type == .flagsChanged {
                 let flags = event.modifierFlags.intersection([.control, .option, .command, .shift])
                 if flags.isEmpty {
-                    self.setLabel("Press keys", dim: true)
+                    self.setLabel("Нажмите клавиши", dim: true)
                 } else {
                     self.setLabel(ShortcutRecorder.symbols(flags))
                 }
@@ -273,7 +273,7 @@ final class ShortcutRecorder: NSButton {
         monitor = nil
         clickMonitor = nil
         setRecordingLook(false)
-        setLabel(shortcut.display)
+        setLabel(shortcut.localizedDisplay)
         onRecording?(false)
     }
 
@@ -284,7 +284,7 @@ final class ShortcutRecorder: NSButton {
         }
         let flags = event.modifierFlags.intersection([.control, .option, .command, .shift])
         guard !flags.intersection([.control, .option, .command]).isEmpty else {
-            setLabel("Add ⌃, ⌥ or ⌘", dim: true)
+            setLabel("Добавьте ⌃, ⌥ или ⌘", dim: true)
             return
         }
         let s = Shortcut(keyCode: UInt32(event.keyCode), modifiers: ShortcutRecorder.carbon(flags),

@@ -1,28 +1,29 @@
 import AppKit
 
 enum HandMaker {
+    private static let stylePlaceholder = "[опишите стиль руки]"
+
     static let prompt = """
-    Make a pointer image for PlayPointer, a Mac app that shows a toy hand on screen.
+    Создай изображение указателя для PlayPointer. Это приложение для Mac, которое показывает на экране игрушечную руку.
 
-    Draw one cartoon right hand in this style: [describe your hand, e.g. knitted wool in mustard yellow]
+    Нарисуй одну мультяшную правую руку в таком стиле — \(stylePlaceholder).
 
-    Rules:
-    - We see the BACK of the hand. The palm faces away from us. The knuckles and the smooth back of the hand face the viewer.
-    - The index finger points straight up. The other three fingers are folded down, so we only see their knuckles, never their fingertips or fingernails.
-    - The raised index finger sits at the far left of the knuckle row, right next to the thumb. Three folded knuckles sit to its right. It must never look like a middle finger.
-    - The thumb is tucked against the left side of the hand. Nothing crosses the front of the fist: no thumb, no fingertips, no fingernails, no palm.
-    - The fingertip is the highest point of the image. Nothing above or beside it.
-    - The hand ends at the bottom in a wrist cuff or a clean flat wrist, facing straight down, centred.
-    - Upright, not tilted. Whole hand visible, nothing cropped.
-    - Transparent background. No shadow, no floor, no outline glow, no text, no stick, no arm.
-    - Soft 3D toy look, bright and readable at small sizes.
-    - Portrait image, hand filling most of the height with a little empty space around it.
+    - Покажи руку с тыльной стороны. Ладонь направлена от зрителя. Видны костяшки и гладкая тыльная сторона кисти.
+    - Указательный палец направлен строго вверх. Остальные три пальца согнуты. Видны только их костяшки.
+    - Указательный палец находится слева от ряда костяшек, рядом с большим. Справа от него три костяшки согнутых пальцев.
+    - Большой палец прижат к левой стороне руки. Перед кулаком нет большого пальца, кончиков пальцев, ногтей или ладони.
+    - Кончик указательного пальца находится в самой высокой точке. Над ним и на его уровне ничего нет.
+    - Снизу рука заканчивается манжетой или ровным краем запястья. Запястье расположено по центру и направлено строго вниз.
+    - Рука стоит вертикально и целиком помещается в кадре.
+    - Фон прозрачный. Без тени, пола, свечения по контуру, текста, палочки и предплечья.
+    - Стиль яркой объёмной игрушки с мягкими формами. Силуэт хорошо различим в маленьком размере.
+    - Вертикальный кадр. Рука занимает почти всю высоту, по краям остаётся немного свободного места.
     """
 
     static func prompt(for idea: String) -> String {
         let trimmed = idea.trimmingCharacters(in: .whitespacesAndNewlines)
-        let style = trimmed.isEmpty ? "a soft vinyl toy in a bright colour" : trimmed
-        return prompt.replacingOccurrences(of: "[describe your hand, e.g. knitted wool in mustard yellow]", with: style)
+        let style = trimmed.isEmpty ? "яркая мягкая виниловая игрушка" : trimmed
+        return prompt.replacingOccurrences(of: stylePlaceholder, with: style)
     }
 
     struct Problem: Error {
@@ -42,12 +43,12 @@ enum HandMaker {
     static func make(from url: URL) throws -> (image: CGImage, ink: UInt32) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            throw Problem(message: "That file isn't an image PlayPointer can read.")
+            throw Problem(message: "PlayPointer не может прочитать это изображение.")
         }
         let pixels = try read(image)
         try check(pixels)
         guard let composed = compose(image, pixels) else {
-            throw Problem(message: "PlayPointer couldn't put that hand on a stick.")
+            throw Problem(message: "Не удалось добавить палочку к руке. Попробуйте другое изображение.")
         }
         return (composed, ink(pixels))
     }
@@ -55,20 +56,20 @@ enum HandMaker {
     private static func read(_ image: CGImage) throws -> Pixels {
         switch image.alphaInfo {
         case .none, .noneSkipFirst, .noneSkipLast:
-            throw Problem(message: "The image needs a transparent background. Save it as a PNG with transparency.")
+            throw Problem(message: "Сохраните изображение в PNG с прозрачным фоном.")
         default:
             break
         }
         let w = image.width
         let h = image.height
         guard w >= 64, h >= 64 else {
-            throw Problem(message: "The image is too small. Use one at least 512 pixels tall.")
+            throw Problem(message: "Высота изображения должна быть не меньше 512 пикселей.")
         }
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
         guard let ctx = CGContext(data: &rgba, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                   space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            throw Problem(message: "That file isn't an image PlayPointer can read.")
+            throw Problem(message: "PlayPointer не может прочитать это изображение.")
         }
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
         return Pixels(width: w, height: h, rgba: rgba)
@@ -88,7 +89,7 @@ enum HandMaker {
             edgeSolid += (p.alpha(0, y) > 32 ? 1 : 0) + (p.alpha(w - 1, y) > 32 ? 1 : 0)
         }
         if Double(edgeSolid) / Double(edge) > 0.02 {
-            throw Problem(message: "The background isn't transparent, or the hand touches the edge of the image.")
+            throw Problem(message: "Проверьте фон и края. Фон должен быть прозрачным, а вокруг руки нужно оставить место.")
         }
 
         let step = max(1, min(w, h) / 256)
@@ -121,23 +122,23 @@ enum HandMaker {
             sizes.append(n)
         }
         guard let biggest = sizes.max() else {
-            throw Problem(message: "The image is empty.")
+            throw Problem(message: "В файле нет видимого изображения.")
         }
         if Double(biggest) / Double(sizes.reduce(0, +)) < 0.97 {
-            throw Problem(message: "The image has more than one thing in it. Use a single hand.")
+            throw Problem(message: "На изображении должна быть одна рука без других предметов.")
         }
 
         guard let box = bounds(p) else {
-            throw Problem(message: "The image is empty.")
+            throw Problem(message: "В файле нет видимого изображения.")
         }
         let bw = box.maxX - box.minX + 1
         let bh = box.maxY - box.minY + 1
         let aspect = Double(bh) / Double(bw)
         if aspect < 1.05 || aspect > 2.8 {
-            throw Problem(message: "The hand should stand upright, taller than it is wide.")
+            throw Problem(message: "Рука должна быть вертикальной, выше своей ширины.")
         }
         if Double(bh) / Double(h) < 0.5 {
-            throw Problem(message: "The hand is too small in the image. Crop it closer.")
+            throw Problem(message: "Рука слишком маленькая. Обрежьте лишнее пространство вокруг.")
         }
 
         let topBand = max(2, bh * 8 / 100)
@@ -150,12 +151,12 @@ enum HandMaker {
             }
         }
         if Double(fingerMax - fingerMin + 1) / Double(bw) > 0.4 {
-            throw Problem(message: "The top of the image should be a single finger pointing up.")
+            throw Problem(message: "В верхней части изображения должен быть один поднятый палец.")
         }
 
         let base = bottomSpan(p, box)
         if Double(base.width) / Double(bw) < 0.2 {
-            throw Problem(message: "The hand should end in a flat wrist or cuff at the bottom.")
+            throw Problem(message: "Снизу у руки должно быть ровное запястье или манжета.")
         }
 
         var soft = 0
@@ -172,7 +173,7 @@ enum HandMaker {
             }
         }
         if Double(soft) / Double(max(1, any)) > 0.08 {
-            throw Problem(message: "The hand has a soft shadow or glow around it. Ask for no shadow.")
+            throw Problem(message: "Вокруг руки есть тень или свечение. Попросите убрать их при генерации.")
         }
     }
 
@@ -303,7 +304,7 @@ enum HandMaker {
 
     static func write(_ image: CGImage, to url: URL) throws {
         guard let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
-            throw Problem(message: "PlayPointer couldn't save the hand.")
+            throw Problem(message: "Не удалось сохранить изображение руки.")
         }
         try data.write(to: url, options: .atomic)
     }
@@ -356,10 +357,10 @@ enum CustomHands {
         try HandMaker.write(image, to: directory.appendingPathComponent("\(id).png"))
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var list = all
-        list.append(CustomHand(id: id, name: trimmed.isEmpty ? "My hand \(list.count + 1)" : String(trimmed.prefix(16)), ink: ink))
+        list.append(CustomHand(id: id, name: trimmed.isEmpty ? "Моя рука \(list.count + 1)" : String(trimmed.prefix(16)), ink: ink))
         try save(list)
         guard let style = PointerStyle(rawValue: id) else {
-            throw HandMaker.Problem(message: "PlayPointer couldn't add that hand.")
+            throw HandMaker.Problem(message: "Не удалось добавить руку в список.")
         }
         return style
     }
@@ -387,7 +388,7 @@ enum CustomHands {
             .trimmingCharacters(in: .whitespaces)
         let words = base.split(separator: " ").prefix(2).joined(separator: " ")
         guard !words.isEmpty, words.count <= 16, !words.lowercased().hasPrefix("chatgpt image") else {
-            return "My hand \(all.count + 1)"
+            return "Моя рука \(all.count + 1)"
         }
         return words.prefix(1).uppercased() + words.dropFirst()
     }

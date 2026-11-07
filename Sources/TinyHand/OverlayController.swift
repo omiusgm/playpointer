@@ -76,6 +76,7 @@ final class OverlayController {
                 if button == 0 {
                     self.downPoint = self.localMouse()
                 }
+                self.showWandSparks(at: NSEvent.mouseLocation)
             }
             self.noteButtonEvent()
         }
@@ -207,6 +208,7 @@ final class OverlayController {
     private func release() {
         drawModeButtons.removeAll()
         armView.held = false
+        armView.clearPointerEffects()
         endStroke()
     }
 
@@ -301,14 +303,7 @@ final class OverlayController {
             options: [.userInitiated, .latencyCritical], reason: "PlayPointer pointer is on")
         if !UserDefaults.standard.bool(forKey: OverlayController.hintShownKey) {
             UserDefaults.standard.set(true, forKey: OverlayController.hintShownKey)
-            var parts: [(key: String, text: String)] = mode == .control
-                ? [("Control", "to use apps"), ("Draw", "to annotate")]
-                : [("Click", "to tap"), ("Drag", "to draw")]
-            if mode == .draw && Preferences.interactKey != .off {
-                parts.append(("Hold \(Preferences.interactKey.symbol)", "to click for real"))
-            }
-            parts.append(("Esc", "to exit"))
-            toolbar.showHint(parts)
+            toolbar.showHint(Toolbar.hintParts(for: mode))
             revealUntil = Date().addingTimeInterval(10)
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
                 self?.toolbar.hideHint()
@@ -473,6 +468,14 @@ final class OverlayController {
         if toolbar.revealed && OverlayController.cgRect(toolbar.frame).contains(location) { return }
         armView.press()
         tapSound.play()
+        showWandSparks(at: OverlayController.cgPoint(location))
+    }
+
+    private func showWandSparks(at mouse: CGPoint) {
+        guard isActive, armView.isWand else { return }
+        if currentFrame?.contains(mouse) != true { tick() }
+        guard let frame = currentFrame, frame.contains(mouse) else { return }
+        armView.showWandSparks(at: CGPoint(x: mouse.x - frame.minX, y: mouse.y - frame.minY))
     }
 
     func runClickTest() {
@@ -608,7 +611,8 @@ final class OverlayController {
             toolbar.place(on: screen)
         }
 
-        if mouse != lastMouse {
+        let mouseMoved = mouse != lastMouse
+        if mouseMoved {
             lastMouse = mouse
             stillSince = Date()
         }
@@ -629,7 +633,7 @@ final class OverlayController {
         }
         armView.aim(cursor: local)
         guard downPoint != nil else {
-            let busy = overDock || (!normalCursor && urgent) || CursorHider.isSettling
+            let busy = overDock || (!normalCursor && urgent) || CursorHider.isSettling || (armView.isNyanCat && mouseMoved)
             updatePace(busy: busy)
             return
         }

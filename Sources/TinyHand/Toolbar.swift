@@ -94,27 +94,27 @@ final class Toolbar {
         modes.segmentCount = PointerMode.allCases.count
         modes.trackingMode = .selectOne
         modes.segmentStyle = .rounded
-        modes.setAccessibilityLabel("Pointer mode")
+        modes.setAccessibilityLabel("Режим указателя")
         for (index, mode) in PointerMode.allCases.enumerated() {
             modes.setLabel(mode.title, forSegment: index)
-            modes.setWidth(58, forSegment: index)
-            modes.setToolTip(mode == .control ? "Click and drag in apps" : "Draw on the screen", forSegment: index)
+            modes.setWidth(88, forSegment: index)
+            modes.setToolTip(mode == .control ? "Щёлкать и перетаскивать в приложениях" : "Рисовать на экране", forSegment: index)
         }
         modes.target = self
         modes.action = #selector(changeMode(_:))
         selectMode(Preferences.pointerMode)
         stack.addArrangedSubview(modes)
-        let ink = makeButton(image: nil, tip: "Ink colour") { [weak self] in
+        let ink = makeButton(image: nil, tip: "Цвет линий") { [weak self] in
             self?.toggleInk()
         }
         inkButton = ink
         stack.addArrangedSubview(ink)
-        let sound = makeButton(symbol: "speaker.wave.2.fill", tip: "Tap sound") { [weak self] in
+        let sound = makeButton(symbol: "speaker.wave.2.fill", tip: "Звук касания") { [weak self] in
             self?.onToggleSound?()
         }
         soundButton = sound
         stack.addArrangedSubview(sound)
-        stack.addArrangedSubview(makeButton(symbol: "xmark", tip: "Exit  (Esc)") { [weak self] in
+        stack.addArrangedSubview(makeButton(symbol: "xmark", tip: "Выход (Esc)") { [weak self] in
             self?.onExit?()
         })
 
@@ -233,9 +233,10 @@ final class Toolbar {
     func setSoundOn(_ on: Bool) {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         let name = on ? "speaker.wave.2.fill" : "speaker.slash.fill"
-        let tip = on ? "Tap sound on — click to mute" : "Tap sound off — click to unmute"
+        let tip = on ? "Выключить звук касания" : "Включить звук касания"
         soundButton?.image = NSImage(systemSymbolName: name, accessibilityDescription: tip)?.withSymbolConfiguration(config)
         soundButton?.toolTip = tip
+        soundButton?.setAccessibilityLabel(tip)
         soundButton?.contentTintColor = NSColor(white: 1, alpha: on ? 0.85 : 0.45)
     }
 
@@ -282,6 +283,17 @@ final class Toolbar {
         return rep
     }
 
+    static func hintParts(for mode: PointerMode) -> [(key: String, text: String)] {
+        var parts = mode == .control
+            ? [(PointerMode.control.title, "приложениями"), (PointerMode.draw.title, "на экране")]
+            : [("Щелчок", "— касание"), ("Перетаскивание", "— рисунок")]
+        if mode == .draw && Preferences.interactKey != .off {
+            parts.append(("Удерживайте \(Preferences.interactKey.symbol)", "для работы с окнами"))
+        }
+        parts.append(("Esc", "— выход"))
+        return parts
+    }
+
     func showHint(_ parts: [(key: String, text: String)]) {
         hideHint()
         let p = Panel(contentRect: CGRect(x: 0, y: 0, width: 300, height: 36),
@@ -309,7 +321,10 @@ final class Toolbar {
                 .font: NSFont.systemFont(ofSize: 12.5),
                 .foregroundColor: NSColor(white: 1, alpha: 0.7),
             ]))
-            row.addArrangedSubview(NSTextField(labelWithAttributedString: text))
+            let label = NSTextField(labelWithAttributedString: text)
+            label.maximumNumberOfLines = 1
+            label.lineBreakMode = .byClipping
+            row.addArrangedSubview(label)
         }
         bg.addSubview(row)
         NSLayoutConstraint.activate([

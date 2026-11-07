@@ -1,28 +1,29 @@
 # PlayPointer
 
-PlayPointer is a playful macOS screen pointer with a choice of characters and separate modes for controlling the computer and drawing. It is an independent, modified fork of [TinyHand](https://github.com/nilbuild/tinyhand) by Kamran Ahmed; the original MIT license and copyright notice are retained in [LICENSE](LICENSE).
+PlayPointer — забавные указатели для macOS с отдельными режимами управления компьютером и рисования. Это самостоятельный форк [TinyHand](https://github.com/nilbuild/tinyhand) Камрана Ахмеда. Авторство и лицензия MIT исходного проекта сохранены в [LICENSE](LICENSE).
 
-## Status
+## Как пользоваться
 
-This is an early source build. It is not an official TinyHand release, does not use TinyHand's update feed, and has not been notarized by Apple. macOS 13 or later is required. Source builds require Xcode and Swift; the build has no external package dependencies. Automatic updates are disabled in this fork.
+- Нажмите значок в строке меню или **⌃⌥H**, чтобы включить указатель. Если сочетание занято, измените его в настройках.
+- В режиме **«Управление»** можно щёлкать, перетаскивать и прокручивать страницы, не выключая указатель.
+- Режим **«Рисование»** позволяет рисовать на экране; ему нужен «Универсальный доступ» macOS. Удерживайте Option, чтобы временно управлять приложениями.
+- **Esc** выключает указатель и стирает рисунок, **⌃⌥X** только стирает рисунок.
+- В настройках откройте **«Указатели»**, чтобы выбрать кошачью лапку, забавный или исходный указатель. У волшебной палочки появляются искры при нажатии, а Nyan Cat оставляет радужный след при движении. Две пиксельные стрелки работают без палочки.
 
-## Use
+## Сборка
 
-- Click the menu-bar icon or press **Control–Option–H** to turn the pointer on or off. If another app uses the shortcut, change it in Settings.
-- **Control** mode is the default: click, right-click, drag and scroll in other apps as usual while the pointer remains visible.
-- Choose **Draw** on the toolbar, in the menu or in Settings to annotate the screen. Draw needs Accessibility permission. Hold Option temporarily to interact with apps in Draw mode.
-- **Escape** clears drawings and hides the pointer; **Control–Option–X** clears drawings. Pick a character on the toolbar or in Settings.
-
-## Build
+Нужны macOS 13 или новее, Xcode и Swift. Выполните:
 
 ```sh
 ./scripts/build-app.sh
 ```
 
-The result is `dist/PlayPointer.app`, signed ad hoc by default for local development. Ad hoc signing does not establish developer identity or Apple notarization; a different Mac may block the build. Do not bypass Gatekeeper unless you understand and accept the risk. A separately signed and notarized release is not yet available.
+Результат — `dist/PlayPointer.app`. Локальная сборка подписывается ad hoc: это не подпись идентифицированного разработчика и не нотарификация Apple. На другом Mac macOS может не разрешить запуск. Подписанного и нотарифицированного релиза пока нет. Автоматические обновления в форке отключены.
 
-## Privacy and permissions
+## Доступ и конфиденциальность
 
-Drawing and interception of clicks use macOS Accessibility access, which gives an app broad ability to control the computer. Grant it only if you trust the build. You can revoke it in System Settings → Privacy & Security → Accessibility. The fork disables the original coordinate and interaction log and does not register itself to start at login automatically. It retains a user-controlled login setting and optional custom-pointer functionality from TinyHand. The latter can open a browser to ChatGPT with the text entered into its prompt. The upstream code also includes optional local image import and clipboard actions.
+«Универсальный доступ» даёт приложению широкие возможности управления компьютером. Он нужен для перехвата мыши в режиме рисования; выдавайте его только сборке, которой доверяете. Разрешение можно отозвать в **Системные настройки → Конфиденциальность и безопасность → Универсальный доступ**. При обычном управлении перехватчик рисования не включается.
 
-The source includes upstream graphical assets and code. A source inspection or ad hoc signature is not a security audit, and users should review the exact build they run. This project does not claim an affiliation with the original developer.
+Форк не включает автозапуск при первом старте и не записывает журнал координат и нажатий. Автозапуск можно включить самостоятельно. Функция создания собственной руки может открыть ChatGPT в браузере с введённым пользователем текстом запроса. Подробнее о проверке оригинала и её ограничениях — в [RESEARCH.md](RESEARCH.md).
+
+Образы вдохновлены публичными референсами и частично созданы с помощью ImageGen. Персонажи и связанные с ними товарные знаки принадлежат соответствующим правообладателям. Проект не является официальным продуктом их владельцев.
