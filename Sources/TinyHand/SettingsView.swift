@@ -101,9 +101,8 @@ final class SettingsModel: ObservableObject {
     }
 
     func openChatGPT() {
-        var parts = URLComponents(string: "https://chatgpt.com/")
-        parts?.queryItems = [URLQueryItem(name: "q", value: HandMaker.prompt(for: handIdea))]
-        if let url = parts?.url {
+        copyPrompt()
+        if let url = URL(string: "https://chatgpt.com/") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -112,7 +111,7 @@ final class SettingsModel: ObservableObject {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .webP, .image]
         panel.allowsMultipleSelection = false
-        panel.message = "Выберите PNG с изображением руки"
+        panel.message = "Выберите прозрачный PNG с изображением указателя"
         panel.prompt = "Выбрать"
         guard panel.runModal() == .OK, let url = panel.url else {
             return
@@ -271,7 +270,7 @@ struct SettingsView: View {
                     .focusable(false)
                     .padding(.bottom, -14)
                 }
-                Text(model.section == .pointers && model.makingHand ? "Создать свою руку" : model.section.title)
+                Text(model.section == .pointers && model.makingHand ? "Создать свой указатель" : model.section.title)
                     .font(.system(size: 22, weight: .bold))
                     .padding(.top, 6)
                 content
@@ -502,7 +501,7 @@ private struct YourHands: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.secondary)
                 Spacer()
-                TextButton(title: "Создать руку…") { model.startMakingHand() }
+                TextButton(title: "Создать указатель…") { model.startMakingHand() }
             }
             .padding(.horizontal, 4)
             if PointerStyle.customHands.isEmpty {
@@ -948,11 +947,11 @@ private struct MakeHandPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
-            Step(number: 1, title: "Опишите руку", detail: "Какой она должна быть?") {
-                PlainField(placeholder: "Например, из горчичной пряжи", text: $model.handIdea)
+            Step(number: 1, title: "Опишите идею", detail: "Например, кошачья лапа, звезда или любимый предмет.") {
+                PlainField(placeholder: "Например, звезда из горчичной пряжи", text: $model.handIdea)
                     .frame(maxWidth: 420)
             }
-            Step(number: 2, title: "Создайте изображение", detail: "Откройте запрос в ChatGPT или скопируйте его для другого генератора. Скачайте результат в PNG с прозрачным фоном.") {
+            Step(number: 2, title: "Создайте изображение", detail: "Откройте ChatGPT: готовый запрос скопируется. Вставьте его в чат и отправьте, затем скачайте прозрачный PNG.") {
                 HStack(spacing: 8) {
                     PrimaryButton(title: "Открыть в ChatGPT", symbol: "arrow.up.right") { model.openChatGPT() }
                     PrimaryButton(title: model.promptCopied ? "Скопировано" : "Копировать запрос", symbol: model.promptCopied ? "checkmark" : "doc.on.doc", primary: false) {
@@ -960,7 +959,7 @@ private struct MakeHandPage: View {
                     }
                 }
             }
-            Step(number: 3, title: "Добавьте изображение", detail: nil) {
+            Step(number: 3, title: "Загрузите PNG и выберите указатель", detail: "Добавьте прозрачное изображение. PlayPointer создаст стержень и выберет указатель.") {
                 if let draft = model.draft {
                     preview(draft)
                 } else {
@@ -1033,16 +1032,16 @@ private struct MakeHandPage: View {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Название").font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
-                    PlainField(placeholder: "Моя рука", text: Binding(get: { model.handName }, set: { model.handName = String($0.prefix(16)) }))
+                    PlainField(placeholder: "Мой указатель", text: Binding(get: { model.handName }, set: { model.handName = String($0.prefix(16)) }))
                         .frame(width: 220)
                 }
-                Text("На изображении должна быть видна тыльная сторона кисти. Если видна ладонь, попробуйте другое изображение.")
+                Text("Кончик указателя должен быть сверху. Проверьте изображение перед добавлением.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 300, alignment: .leading)
                 HStack(spacing: 10) {
-                    PrimaryButton(title: "Добавить руку", symbol: nil) { model.saveDraft() }
+                    PrimaryButton(title: "Добавить и выбрать", symbol: nil) { model.saveDraft() }
                     TextButton(title: "Выбрать другое изображение") { model.chooseHandFile() }
                 }
             }

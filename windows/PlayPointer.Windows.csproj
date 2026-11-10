@@ -10,7 +10,7 @@
     <AssemblyName>PlayPointer</AssemblyName>
     <RootNamespace>PlayPointer.Windows</RootNamespace>
     <Product>PlayPointer</Product>
-    <Version>0.2.6</Version>
+    <Version>0.2.7</Version>
     <Company>Владимир Кривошеев</Company>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

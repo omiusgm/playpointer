@@ -1,29 +1,19 @@
 import AppKit
 
 enum HandMaker {
-    private static let stylePlaceholder = "[опишите стиль руки]"
-
-    static let prompt = """
-    Создай изображение указателя для PlayPointer. Это приложение для Mac, которое показывает на экране игрушечную руку.
-
-    Нарисуй одну мультяшную правую руку в таком стиле — \(stylePlaceholder).
-
-    - Покажи руку с тыльной стороны. Ладонь направлена от зрителя. Видны костяшки и гладкая тыльная сторона кисти.
-    - Указательный палец направлен строго вверх. Остальные три пальца согнуты. Видны только их костяшки.
-    - Указательный палец находится слева от ряда костяшек, рядом с большим. Справа от него три костяшки согнутых пальцев.
-    - Большой палец прижат к левой стороне руки. Перед кулаком нет большого пальца, кончиков пальцев, ногтей или ладони.
-    - Кончик указательного пальца находится в самой высокой точке. Над ним и на его уровне ничего нет.
-    - Снизу рука заканчивается манжетой или ровным краем запястья. Запястье расположено по центру и направлено строго вниз.
-    - Рука стоит вертикально и целиком помещается в кадре.
-    - Фон прозрачный. Без тени, пола, свечения по контуру, текста, палочки и предплечья.
-    - Стиль яркой объёмной игрушки с мягкими формами. Силуэт хорошо различим в маленьком размере.
-    - Вертикальный кадр. Рука занимает почти всю высоту, по краям остаётся немного свободного места.
-    """
+    private static let canvasW = 1024
+    private static let canvasH = 1536
+    private static let headBottom: CGFloat = 710
+    static var wristFraction: CGFloat { headBottom / CGFloat(canvasH) }
 
     static func prompt(for idea: String) -> String {
         let trimmed = idea.trimmingCharacters(in: .whitespacesAndNewlines)
-        let style = trimmed.isEmpty ? "яркая мягкая виниловая игрушка" : trimmed
-        return prompt.replacingOccurrences(of: stylePlaceholder, with: style)
+        let subject = trimmed.isEmpty ? "яркая игрушечная рука-указатель" : trimmed
+        return """
+        Создай один наконечник указателя для приложения PlayPointer: \(subject).
+        Один цельный объект расположен вертикально, целиком в кадре, с небольшим свободным полем со всех сторон. Выразительный кончик указателя находится в самой верхней точке объекта. Силуэт должен хорошо читаться в маленьком размере.
+        Прозрачный фон с настоящим альфа-каналом, PNG. Без фоновой шахматки, текста, пола, тени и свечения. Без палочки или стержня: приложение добавит их самостоятельно. Не обрезай объект.
+        """
     }
 
     struct Problem: Error {
@@ -48,7 +38,7 @@ enum HandMaker {
         let pixels = try read(image)
         try check(pixels)
         guard let composed = compose(image, pixels) else {
-            throw Problem(message: "Не удалось добавить палочку к руке. Попробуйте другое изображение.")
+            throw Problem(message: "Не удалось добавить стержень к объекту. Попробуйте другое изображение.")
         }
         return (composed, ink(pixels))
     }
@@ -89,92 +79,18 @@ enum HandMaker {
             edgeSolid += (p.alpha(0, y) > 32 ? 1 : 0) + (p.alpha(w - 1, y) > 32 ? 1 : 0)
         }
         if Double(edgeSolid) / Double(edge) > 0.02 {
-            throw Problem(message: "Проверьте фон и края. Фон должен быть прозрачным, а вокруг руки нужно оставить место.")
-        }
-
-        let step = max(1, min(w, h) / 256)
-        let gw = w / step
-        let gh = h / step
-        var grid = [Bool](repeating: false, count: gw * gh)
-        for gy in 0..<gh {
-            for gx in 0..<gw where p.alpha(gx * step, gy * step) > 128 {
-                grid[gy * gw + gx] = true
-            }
-        }
-        var seen = [Bool](repeating: false, count: gw * gh)
-        var sizes: [Int] = []
-        for start in 0..<grid.count where grid[start] && !seen[start] {
-            var stack = [start]
-            seen[start] = true
-            var n = 0
-            while let i = stack.popLast() {
-                n += 1
-                let x = i % gw
-                let y = i / gw
-                for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] where nx >= 0 && ny >= 0 && nx < gw && ny < gh {
-                    let j = ny * gw + nx
-                    if grid[j] && !seen[j] {
-                        seen[j] = true
-                        stack.append(j)
-                    }
-                }
-            }
-            sizes.append(n)
-        }
-        guard let biggest = sizes.max() else {
-            throw Problem(message: "В файле нет видимого изображения.")
-        }
-        if Double(biggest) / Double(sizes.reduce(0, +)) < 0.97 {
-            throw Problem(message: "На изображении должна быть одна рука без других предметов.")
+            throw Problem(message: "Проверьте фон и края. Фон должен быть прозрачным, а вокруг объекта нужно оставить место.")
         }
 
         guard let box = bounds(p) else {
             throw Problem(message: "В файле нет видимого изображения.")
         }
-        let bw = box.maxX - box.minX + 1
         let bh = box.maxY - box.minY + 1
-        let aspect = Double(bh) / Double(bw)
-        if aspect < 1.05 || aspect > 2.8 {
-            throw Problem(message: "Рука должна быть вертикальной, выше своей ширины.")
-        }
-        if Double(bh) / Double(h) < 0.5 {
-            throw Problem(message: "Рука слишком маленькая. Обрежьте лишнее пространство вокруг.")
+        if Double(bh) / Double(h) < 0.3 {
+            throw Problem(message: "Объект слишком маленький. Обрежьте лишнее пространство вокруг него.")
         }
 
-        let topBand = max(2, bh * 8 / 100)
-        var fingerMin = w
-        var fingerMax = 0
-        for y in box.minY..<(box.minY + topBand) {
-            for x in box.minX...box.maxX where p.alpha(x, y) > 128 {
-                fingerMin = min(fingerMin, x)
-                fingerMax = max(fingerMax, x)
-            }
-        }
-        if Double(fingerMax - fingerMin + 1) / Double(bw) > 0.4 {
-            throw Problem(message: "В верхней части изображения должен быть один поднятый палец.")
-        }
 
-        let base = bottomSpan(p, box)
-        if Double(base.width) / Double(bw) < 0.2 {
-            throw Problem(message: "Снизу у руки должно быть ровное запястье или манжета.")
-        }
-
-        var soft = 0
-        var any = 0
-        for y in stride(from: 0, to: h, by: 2) {
-            for x in stride(from: 0, to: w, by: 2) {
-                let a = p.alpha(x, y)
-                if a > 20 {
-                    any += 1
-                    if a < 200 {
-                        soft += 1
-                    }
-                }
-            }
-        }
-        if Double(soft) / Double(max(1, any)) > 0.08 {
-            throw Problem(message: "Вокруг руки есть тень или свечение. Попросите убрать их при генерации.")
-        }
     }
 
     private static func bounds(_ p: Pixels) -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
@@ -193,7 +109,7 @@ enum HandMaker {
         return maxX < 0 ? nil : (minX, minY, maxX, maxY)
     }
 
-    private static func bottomSpan(_ p: Pixels, _ box: (minX: Int, minY: Int, maxX: Int, maxY: Int)) -> (width: Int, center: Double) {
+    private static func bottomCenter(_ p: Pixels, _ box: (minX: Int, minY: Int, maxX: Int, maxY: Int)) -> Double {
         let bh = box.maxY - box.minY + 1
         var lo = p.width
         var hi = -1
@@ -203,26 +119,31 @@ enum HandMaker {
                 hi = max(hi, x)
             }
         }
-        return hi < 0 ? (0, Double(box.minX + box.maxX) / 2) : (hi - lo + 1, Double(lo + hi) / 2)
+        return hi < 0 ? Double(box.minX + box.maxX) / 2 : Double(lo + hi) / 2
     }
 
     private static func compose(_ image: CGImage, _ p: Pixels) -> CGImage? {
         guard let box = bounds(p) else {
             return nil
         }
-        let canvasW = 1024
-        let canvasH = 1536
-        let handTop: CGFloat = 150
         let handHeight: CGFloat = 560
         let bw = CGFloat(box.maxX - box.minX + 1)
         let bh = CGFloat(box.maxY - box.minY + 1)
-        let scale = min(handHeight / bh, 700 / bw)
+        let center = Int(bottomCenter(p, box).rounded())
+        let centerBottom = stride(from: box.maxY, through: box.minY, by: -1)
+            .first { p.alpha(center, $0) > 128 }
+        let attachmentX = centerBottom == nil
+            ? (box.minX...box.maxX).filter { p.alpha($0, box.maxY) > 128 }
+                .min { abs($0 - center) < abs($1 - center) } ?? center
+            : center
+        let wristX = CGFloat(attachmentX) + 0.5
+        let halfWidth = CGFloat(canvasW) / 2
+        let reach = max(wristX - CGFloat(box.minX), CGFloat(box.maxX + 1) - wristX)
+        let scale = min(handHeight / bh, 700 / bw, (halfWidth - 32) / reach)
         let drawW = CGFloat(p.width) * scale
         let drawH = CGFloat(p.height) * scale
-        let wristX = (bottomSpan(p, box).center + 0.5) * Double(scale)
-        let originX = CGFloat(canvasW) / 2 - CGFloat(wristX)
-        let originTop = handTop - CGFloat(box.minY) * scale
-        let handBottom = handTop + bh * scale
+        let originX = halfWidth - wristX * scale
+        let originTop = headBottom - CGFloat(box.maxY + 1) * scale
 
         guard let ctx = CGContext(data: nil, width: canvasW, height: canvasH, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
@@ -232,7 +153,8 @@ enum HandMaker {
         ctx.interpolationQuality = .high
 
         let rodW = min(76, max(54, bw * scale * 0.18))
-        let rodTop = handBottom - 30
+        let attachmentY = originTop + CGFloat((centerBottom ?? box.maxY) + 1) * scale
+        let rodTop = min(headBottom - 30, attachmentY - rodW / 2 - 4)
         let rodBottom: CGFloat = 1462
         let rod = CGRect(x: CGFloat(canvasW) / 2 - rodW / 2, y: CGFloat(canvasH) - rodBottom,
                          width: rodW, height: rodBottom - rodTop)
@@ -357,10 +279,10 @@ enum CustomHands {
         try HandMaker.write(image, to: directory.appendingPathComponent("\(id).png"))
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var list = all
-        list.append(CustomHand(id: id, name: trimmed.isEmpty ? "Моя рука \(list.count + 1)" : String(trimmed.prefix(16)), ink: ink))
+        list.append(CustomHand(id: id, name: trimmed.isEmpty ? "Мой указатель \(list.count + 1)" : String(trimmed.prefix(16)), ink: ink))
         try save(list)
         guard let style = PointerStyle(rawValue: id) else {
-            throw HandMaker.Problem(message: "Не удалось добавить руку в список.")
+            throw HandMaker.Problem(message: "Не удалось добавить указатель в список.")
         }
         return style
     }
@@ -388,7 +310,7 @@ enum CustomHands {
             .trimmingCharacters(in: .whitespaces)
         let words = base.split(separator: " ").prefix(2).joined(separator: " ")
         guard !words.isEmpty, words.count <= 16, !words.lowercased().hasPrefix("chatgpt image") else {
-            return "Моя рука \(all.count + 1)"
+            return "Мой указатель \(all.count + 1)"
         }
         return words.prefix(1).uppercased() + words.dropFirst()
     }

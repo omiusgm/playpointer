@@ -39,6 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupSettings()
         registerHotKeys()
 
+        overlay.onMakePointer = { [weak self] in
+            guard let self else { return }
+            self.overlay.exit()
+            self.settings.showMakePointer()
+        }
         overlay.onNeedsPermission = { [weak self] in
             self?.showWelcome()
         }

@@ -3,10 +3,11 @@ import SwiftUI
 
 final class Toolbar {
     var onPick: ((PointerStyle) -> Void)?
+    var onMakePointer: (() -> Void)?
     var onSelectMode: ((PointerMode) -> Void)?
     var onToggleSound: (() -> Void)?
     var onExit: (() -> Void)?
-    var onCatalogVisibilityChanged: (() -> Void)?
+    var onPopupVisibilityChanged: (() -> Void)?
 
     private final class Panel: NSPanel {
         override var canBecomeKey: Bool { false }
@@ -25,6 +26,12 @@ final class Toolbar {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
+    private final class SizeSlider: NSSlider {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
+    private enum PopupKind { case catalog, size }
+
     private let panel: Panel
     private let stack = NSStackView()
     private let modes = ModeControl()
@@ -37,7 +44,9 @@ final class Toolbar {
     private var visibleScreen: CGRect?
     private var current: PointerStyle?
     private var catalogButton: Button?
-    private var catalog: Panel?
+    private var sizeButton: Button?
+    private var popup: (kind: PopupKind, panel: Panel, anchor: Button)?
+    private weak var sizeSlider: SizeSlider?
     private var inkButton: Button?
     private var swatches: [InkChoice: Button] = [:]
     private var inkOpen = false
@@ -57,7 +66,7 @@ final class Toolbar {
         .catFish, PointerStyle(rawValue: "funny10"), .nyanFlight,
     ].compactMap { $0 }
 
-    var catalogFrame: CGRect? { catalog?.frame }
+    var popupFrame: CGRect? { popup?.panel.frame }
     var frame: CGRect { inkOpen ? panel.frame.union(tray.frame) : panel.frame }
 
     init() {
@@ -130,10 +139,19 @@ final class Toolbar {
         styleScroll.heightAnchor.constraint(equalToConstant: Self.styleSide).isActive = true
 
         let more = makeButton(symbol: "plus", tip: "Все указатели") { [weak self] in
-            self?.toggleCatalog()
+            self?.togglePopup(.catalog)
         }
         catalogButton = more
         stack.addArrangedSubview(more)
+        let size = makeButton(tip: "Размер указателя", width: 64) { [weak self] in
+            self?.togglePopup(.size)
+        }
+        size.attributedTitle = NSAttributedString(string: "Размер", attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor(white: 1, alpha: 0.86),
+        ])
+        sizeButton = size
+        stack.addArrangedSubview(size)
         stack.addArrangedSubview(Toolbar.divider())
         modes.segmentCount = PointerMode.allCases.count
         modes.trackingMode = .selectOne
@@ -174,46 +192,51 @@ final class Toolbar {
             self?.rebuildStyles()
         }
         NotificationCenter.default.addObserver(forName: Preferences.changed, object: nil, queue: .main) { [weak self] _ in
+            self?.syncSizeSlider()
             self?.rebuildStyles()
             self?.refreshInk()
         }
     }
 
-    private func toggleCatalog() {
-        if !closeCatalog() { showCatalog() }
+    private func togglePopup(_ kind: PopupKind) {
+        let wasOpen = popup?.kind == kind
+        closePopup()
+        guard !wasOpen else { return }
+        switch kind {
+        case .catalog: showCatalog()
+        case .size: showSize()
+        }
     }
 
-    private func showCatalog() {
-        guard catalog == nil, let button = catalogButton,
+    private func showCatalog(present: Bool = true) {
+        guard let button = catalogButton,
               let screen = panel.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let width = min(400, visible.width - 24)
         let height = min(340, visible.maxY - panel.frame.maxY - 54)
         guard width >= 80, height >= 50 else { return }
-        setInkOpen(false)
-        hideHint()
-
-        let pop = Panel(contentRect: CGRect(x: 0, y: 0, width: width, height: height + 34),
-                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        pop.isOpaque = false
-        pop.backgroundColor = .clear
-        pop.hasShadow = true
-        pop.hidesOnDeactivate = false
-        pop.isFloatingPanel = true
-        pop.level = NSWindow.Level(rawValue: panel.level.rawValue + 2)
-        pop.collectionBehavior = panel.collectionBehavior
-
-        let glass = NSVisualEffectView.darkGlass(radius: 16)
-        pop.contentView = glass
+        let pop = makePopup(width: width, height: height + 34, anchor: button, visible: visible)
+        guard let glass = pop.contentView else { return }
         let content = VStack(alignment: .leading, spacing: 0) {
             Text("Все указатели")
                 .font(.system(size: 13, weight: .semibold))
                 .padding(.horizontal, 16)
                 .frame(height: 34, alignment: .bottomLeading)
                 .accessibilityAddTraits(.isHeader)
-            PointerCatalog(selected: current, width: width, height: height) { [weak self] style in
+            SwiftUI.Button {
+                self.closePopup()
+                self.onMakePointer?()
+            } label: {
+                Label("Создать свой указатель…", systemImage: "plus.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            PointerCatalog(selected: current, width: width, height: max(50, height - 68)) { [weak self] style in
                 guard let self else { return }
-                self.closeCatalog()
+                self.closePopup()
                 self.onPick?(style)
             }
         }
@@ -223,31 +246,114 @@ final class Toolbar {
         host.frame = glass.bounds
         glass.addSubview(host)
 
+        openPopup(.catalog, panel: pop, anchor: button, closeLabel: "Закрыть каталог указателей", present: present)
+    }
+
+    private func showSize(present: Bool = true) {
+        guard let button = sizeButton, let screen = panel.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let width = min(270, visible.width - 24)
+        let height: CGFloat = 76
+        guard width >= 170, panel.frame.maxY + height + 8 <= visible.maxY else { return }
+        let pop = makePopup(width: width, height: height, anchor: button, visible: visible)
+        guard let glass = pop.contentView else { return }
+
+        let title = NSTextField(labelWithString: "Размер указателя")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = NSColor(white: 1, alpha: 0.9)
+
+        let slider = SizeSlider()
+        slider.minValue = Double(Preferences.pointerSizeRange.lowerBound)
+        slider.maxValue = Double(Preferences.pointerSizeRange.upperBound)
+        slider.isContinuous = true
+        slider.target = self
+        slider.action = #selector(changePointerSize(_:))
+        slider.setAccessibilityLabel("Размер указателя")
+        slider.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        sizeSlider = slider
+        syncSizeSlider()
+
+        let minimum = NSTextField(labelWithString: "Меньше")
+        let maximum = NSTextField(labelWithString: "Больше")
+        for label in [minimum, maximum] {
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = NSColor(white: 1, alpha: 0.65)
+        }
+        let row = NSStackView(views: [minimum, slider, maximum])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+
+        let content = NSStackView(views: [title, row])
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = 7
+        content.translatesAutoresizingMaskIntoConstraints = false
+        glass.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: glass.leadingAnchor, constant: 14),
+            content.trailingAnchor.constraint(equalTo: glass.trailingAnchor, constant: -14),
+            content.centerYAnchor.constraint(equalTo: glass.centerYAnchor),
+            row.widthAnchor.constraint(equalTo: content.widthAnchor),
+        ])
+
+        openPopup(.size, panel: pop, anchor: button, closeLabel: "Закрыть настройку размера", present: present)
+    }
+
+    private func makePopup(width: CGFloat, height: CGFloat, anchor button: Button, visible: CGRect) -> Panel {
+        setInkOpen(false)
+        hideHint()
+        let pop = Panel(contentRect: CGRect(x: 0, y: 0, width: width, height: height),
+                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        pop.isOpaque = false
+        pop.backgroundColor = .clear
+        pop.hasShadow = true
+        pop.hidesOnDeactivate = false
+        pop.isFloatingPanel = true
+        pop.level = NSWindow.Level(rawValue: panel.level.rawValue + 2)
+        pop.collectionBehavior = panel.collectionBehavior
+        pop.contentView = NSVisualEffectView.darkGlass(radius: 16)
+
         let anchor = panel.convertToScreen(button.convert(button.bounds, to: nil)).midX
         let x = min(max(anchor - width / 2, visible.minX + 12), visible.maxX - width - 12)
         pop.setFrameOrigin(CGPoint(x: x, y: panel.frame.maxY + 8))
-        catalog = pop
+        return pop
+    }
+
+    private func openPopup(_ kind: PopupKind, panel pop: Panel, anchor button: Button, closeLabel: String, present: Bool = true) {
+        popup = (kind, pop, button)
         button.layer?.backgroundColor = NSColor(white: 1, alpha: 0.18).cgColor
-        button.setAccessibilityLabel("Закрыть каталог указателей")
-        pop.orderFrontRegardless()
-        onCatalogVisibilityChanged?()
+        button.setAccessibilityLabel(closeLabel)
+        onPopupVisibilityChanged?()
+        if present { pop.orderFrontRegardless() }
     }
 
     @discardableResult
-    func closeCatalog() -> Bool {
-        guard let pop = catalog else { return false }
-        catalog = nil
-        pop.orderOut(nil)
-        catalogButton?.layer?.backgroundColor = NSColor.clear.cgColor
-        catalogButton?.setAccessibilityLabel("Все указатели")
-        onCatalogVisibilityChanged?()
+    func closePopup() -> Bool {
+        guard let open = popup else { return false }
+        popup = nil
+        if open.kind == .size { sizeSlider = nil }
+        open.panel.orderOut(nil)
+        open.anchor.layer?.backgroundColor = NSColor.clear.cgColor
+        open.anchor.setAccessibilityLabel(open.anchor.toolTip)
+        onPopupVisibilityChanged?()
         return true
     }
 
-    func dismissCatalog(outside point: CGPoint) {
-        if let catalogFrame, !catalogFrame.contains(point), !frame.contains(point) {
-            closeCatalog()
+    func dismissPopup(outside point: CGPoint) {
+        if let popupFrame, !popupFrame.contains(point), !frame.contains(point) {
+            closePopup()
         }
+    }
+
+    private func syncSizeSlider() {
+        let value = Double(Preferences.pointerSize)
+        if let sizeSlider, sizeSlider.doubleValue != value { sizeSlider.doubleValue = value }
+    }
+
+    @objc private func changePointerSize(_ slider: NSSlider) {
+        let value = CGFloat(slider.doubleValue)
+        if Preferences.pointerSize != value { Preferences.pointerSize = value }
     }
 
     private func toggleInk() {
@@ -260,7 +366,7 @@ final class Toolbar {
         }
         inkOpen = open
         if open {
-            closeCatalog()
+            closePopup()
             if swatches.isEmpty {
                 for choice in InkChoice.allCases {
                     let b = makeButton(image: nil, tip: choice.title, side: 30) { [weak self] in
@@ -434,6 +540,19 @@ final class Toolbar {
         return CGPoint(x: r.minX + (CGFloat(index) + 0.5) * segmentWidth, y: r.midY)
     }
 
+    var sizeButtonCenter: CGPoint? {
+        guard let sizeButton else { return nil }
+        let rect = panel.convertToScreen(sizeButton.convert(sizeButton.bounds, to: nil))
+        return CGPoint(x: rect.midX, y: rect.midY)
+    }
+
+    func sizeSliderPoint(at fraction: CGFloat) -> CGPoint? {
+        guard let sizeSlider, let window = sizeSlider.window else { return nil }
+        window.contentView?.layoutSubtreeIfNeeded()
+        let rect = window.convertToScreen(sizeSlider.convert(sizeSlider.bounds, to: nil))
+        return CGPoint(x: rect.minX + rect.width * fraction, y: rect.midY)
+    }
+
     func snapshot() -> NSBitmapImageRep? {
         guard let view = panel.contentView else {
             return nil
@@ -452,9 +571,20 @@ final class Toolbar {
     func snapshotCatalog() -> NSBitmapImageRep? {
         guard let screen = NSScreen.main else { return nil }
         place(on: screen)
-        showCatalog()
-        defer { closeCatalog() }
-        guard let view = catalog?.contentView else { return nil }
+        showCatalog(present: false)
+        return snapshotPopup()
+    }
+
+    func snapshotSize() -> NSBitmapImageRep? {
+        guard let screen = NSScreen.main else { return nil }
+        place(on: screen)
+        showSize(present: false)
+        return snapshotPopup()
+    }
+
+    private func snapshotPopup() -> NSBitmapImageRep? {
+        defer { closePopup() }
+        guard let view = popup?.panel.contentView else { return nil }
         view.layer?.backgroundColor = NSColor(white: 0.16, alpha: 1).cgColor
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
@@ -564,7 +694,7 @@ final class Toolbar {
     }
 
     func select(_ style: PointerStyle) {
-        closeCatalog()
+        closePopup()
         current = style
         rebuildStyles()
         highlight(style)
@@ -588,7 +718,7 @@ final class Toolbar {
     }
 
     func place(on screen: NSScreen) {
-        closeCatalog()
+        closePopup()
         setInkOpen(false)
         visibleScreen = screen.visibleFrame
         resize()
@@ -602,7 +732,7 @@ final class Toolbar {
     }
 
     func hide() {
-        closeCatalog()
+        closePopup()
         setInkOpen(false)
         hideHint()
         revealed = false
@@ -616,7 +746,7 @@ final class Toolbar {
         }
         revealed = value
         if !value {
-            closeCatalog()
+            closePopup()
             setInkOpen(false)
         }
         panel.ignoresMouseEvents = !value
@@ -639,7 +769,8 @@ final class Toolbar {
 
     private var actions: [Button: () -> Void] = [:]
 
-    private func makeButton(image: NSImage? = nil, symbol: String? = nil, tip: String, side: CGFloat = 40, action: @escaping () -> Void) -> Button {
+    private func makeButton(image: NSImage? = nil, symbol: String? = nil, tip: String, side: CGFloat = 40,
+                            width: CGFloat? = nil, action: @escaping () -> Void) -> Button {
         let b = Button()
         b.isBordered = false
         b.bezelStyle = .regularSquare
@@ -657,7 +788,7 @@ final class Toolbar {
             b.contentTintColor = NSColor(white: 1, alpha: 0.85)
             b.imageScaling = .scaleNone
         }
-        b.widthAnchor.constraint(equalToConstant: side).isActive = true
+        b.widthAnchor.constraint(equalToConstant: width ?? side).isActive = true
         b.heightAnchor.constraint(equalToConstant: side).isActive = true
         b.target = self
         b.action = #selector(tapped(_:))

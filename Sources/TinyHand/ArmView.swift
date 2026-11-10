@@ -8,6 +8,8 @@ final class ArmView: NSView {
     private let catFollowerLayer = CALayer()
     private let dotLayer = CAShapeLayer()
     private let dotCore = CAShapeLayer()
+    private let nyanFlightStar = CAShapeLayer()
+    private let nyanFlightStarRadius: CGFloat = 7
 
     private(set) var style: PointerStyle = .lavender
     private var asset: HandAsset?
@@ -107,10 +109,12 @@ final class ArmView: NSView {
     private func updatePointerVisibility() {
         let cat = style.isCatFollower
         let hideCat = pointerHidden || !cat || catFollow == nil
+        let hideFlight = pointerHidden || nyanFlightMotion == nil
         group.isHidden = pointerHidden || style == .laser || cat || style.isStandaloneCursor
-        standaloneLayer.isHidden = pointerHidden || !style.isStandaloneCursor
+        standaloneLayer.isHidden = pointerHidden || !style.isStandaloneCursor || (style == .nyanFlight && hideFlight)
         catFollowerLayer.isHidden = hideCat
         dotLayer.isHidden = pointerHidden || (style != .laser && hideCat)
+        nyanFlightStar.isHidden = style != .nyanFlight || hideFlight
     }
 
     override init(frame frameRect: NSRect) {
@@ -151,6 +155,23 @@ final class ArmView: NSView {
         dotLayer.shadowOffset = .zero
         dotCore.fillColor = CGColor(srgbRed: 1, green: 0.86, blue: 0.82, alpha: 0.95)
         dotLayer.addSublayer(dotCore)
+
+        let radius = nyanFlightStarRadius
+        let star = CGMutablePath()
+        star.move(to: CGPoint(x: 0, y: radius))
+        for index in 1..<10 {
+            let angle = CGFloat.pi / 2 + CGFloat(index) * .pi / 5
+            let length = index.isMultiple(of: 2) ? radius : radius * 0.46
+            star.addLine(to: CGPoint(x: cos(angle) * length, y: sin(angle) * length))
+        }
+        star.closeSubpath()
+        nyanFlightStar.bounds = CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)
+        nyanFlightStar.path = star
+        nyanFlightStar.fillColor = Ink.hex(0xFFD35A)
+        nyanFlightStar.strokeColor = Ink.hex(0x352507)
+        nyanFlightStar.lineWidth = 1.4
+        nyanFlightStar.lineJoin = .round
+        root.addSublayer(nyanFlightStar)
 
         setStyle(PointerStyle.saved)
         NotificationCenter.default.addObserver(forName: Preferences.changed, object: nil, queue: .main) { [weak self] _ in
@@ -311,6 +332,7 @@ final class ArmView: NSView {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             standaloneLayer.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
+            updatePointerVisibility()
             CATransaction.commit()
         }
     }
@@ -512,9 +534,12 @@ final class ArmView: NSView {
             pressAmount += (0 - pressAmount) * 0.18
         }
         if style.isStandaloneCursor, let asset {
-            aimStandalone(cursor: cursor, asset: reactionAsset(at: now) ?? asset)
-            if style == .nyanFlight, !pointerHidden {
+            if style == .nyanFlight {
+                guard !pointerHidden else { return }
                 updateNyanFlightHeading(at: cursor)
+            }
+            aimStandalone(cursor: cursor, asset: reactionAsset(at: now) ?? asset)
+            if style == .nyanFlight {
                 let tail = CGPoint(x: standaloneLayer.bounds.width * 0.25, y: standaloneLayer.bounds.height * 0.45)
                 let emitter = standaloneLayer.convert(tail, to: layer)
                 updateRainbowTrail(at: cursor, emitter: emitter, now: now)
@@ -613,9 +638,17 @@ final class ArmView: NSView {
         let compression = isBongoCat ? 1 : 1 - 0.06 * pressAmount
         let height = handLenFrac * bounds.height * sizeScale * compression
         let spriteBounds = CGRect(x: 0, y: 0, width: height * asset.aspect, height: height)
+        var position = cursor
+        let flying = style == .nyanFlight
+        if flying {
+            let overhang = max(0, asset.handMaxX - asset.tipX) * spriteBounds.width
+            let clearance = nyanFlightStarRadius + nyanFlightStar.lineWidth / 2 + 2 + overhang
+            position.x += nyanFlightFacesRight ? -clearance : clearance
+        }
         let shadowOpacity: Float = showShadow ? 0.26 : 0
         let imageChanged = displayImage !== asset.image
-        guard imageChanged || standaloneLayer.position != cursor || standaloneLayer.bounds != spriteBounds
+        let updateStar = flying && (nyanFlightStar.isHidden || nyanFlightStar.position != cursor)
+        guard imageChanged || updateStar || standaloneLayer.position != position || standaloneLayer.bounds != spriteBounds
                 || standaloneLayer.shadowOpacity != shadowOpacity else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -625,8 +658,12 @@ final class ArmView: NSView {
             standaloneLayer.anchorPoint = CGPoint(x: asset.tipX, y: 1 - asset.tip)
         }
         standaloneLayer.bounds = spriteBounds
-        standaloneLayer.position = cursor
+        standaloneLayer.position = position
         standaloneLayer.shadowOpacity = shadowOpacity
+        if updateStar {
+            nyanFlightStar.position = cursor
+            if nyanFlightStar.isHidden { updatePointerVisibility() }
+        }
         CATransaction.commit()
     }
 
@@ -787,6 +824,7 @@ final class ArmView: NSView {
         handLayer.contentsScale = scale
         standaloneLayer.contentsScale = scale
         catFollowerLayer.contentsScale = scale
+        nyanFlightStar.contentsScale = scale
         ink.scale = scale
     }
 }

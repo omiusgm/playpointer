@@ -29,7 +29,7 @@ internal static class PointerCatalog
 
     internal static readonly PointerStyle Laser = new("laser", "Лазерная точка", Basic, null, 0xFA3A51, PointerKind.Laser, false);
 
-    internal static readonly IReadOnlyList<PointerStyle> All = new PointerStyle[]
+    private static readonly IReadOnlyList<PointerStyle> BuiltIn = new PointerStyle[]
     {
         Laser,
         Style("catLaser", "Лапка за лазером", 0xD78461, Cats, asset: "hand_cat_laser", kind: PointerKind.Cat),
@@ -96,6 +96,17 @@ internal static class PointerCatalog
         Style("leaf", "Лист", 0x3E9E2E),
         Style("cookie", "Пряник", 0x9A5E2C),
     }.Where(style => style.Asset is null || File.Exists(Artwork.PathFor(style.Asset))).ToArray();
+
+    private static IReadOnlyList<PointerStyle> custom = CustomPointers.Load();
+    internal static IEnumerable<PointerStyle> All => BuiltIn.Concat(custom);
+    internal static PointerStyle Default => BuiltIn.FirstOrDefault(style => style.Id == "lavender") ?? Laser;
+
+    internal static PointerStyle Import(string path, string idea)
+    {
+        var added = CustomPointers.Import(path, idea);
+        custom = [.. custom, added];
+        return added;
+    }
 }
 
 internal sealed class Artwork : IDisposable
@@ -119,8 +130,30 @@ internal sealed class Artwork : IDisposable
 
     internal static Artwork? Load(string? name, bool pixelated)
     {
-        if (name is null || !File.Exists(PathFor(name))) return null;
-        using var source = System.Drawing.Image.FromFile(PathFor(name));
+        if (name is null) return null;
+        if (CustomPointers.ImagePath(name) is string customPath)
+        {
+            using var input = File.OpenRead(customPath);
+            return LoadCustom(input);
+        }
+        string path = PathFor(name);
+        if (!File.Exists(path)) return null;
+        using var source = System.Drawing.Image.FromFile(path);
+        return FromImage(source, name, pixelated);
+    }
+
+    internal static Artwork LoadCustom(Stream input)
+    {
+        Size expected = CustomPointers.ReadPngSize(input);
+        using var source = System.Drawing.Image.FromStream(input, useEmbeddedColorManagement: false, validateImageData: true);
+        if (source.RawFormat.Guid != ImageFormat.Png.Guid || source.Size != expected)
+            throw new InvalidDataException("Не удалось прочитать PNG. Выберите другой файл.");
+        return FromImage(source, "", pixelated: false, requireTransparency: true)
+            ?? throw new InvalidDataException("PNG пустой. Выберите изображение с видимым наконечником.");
+    }
+
+    private static Artwork? FromImage(Image source, string name, bool pixelated, bool requireTransparency = false)
+    {
         const int maxSize = 440;
         float scale = Math.Min(1f, (float)maxSize / Math.Max(source.Width, source.Height));
         int width = Math.Max(1, (int)MathF.Round(source.Width * scale));
@@ -131,10 +164,19 @@ internal sealed class Artwork : IDisposable
             graphics.InterpolationMode = pixelated ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBicubic;
             graphics.PixelOffsetMode = PixelOffsetMode.Half;
             graphics.CompositingMode = CompositingMode.SourceCopy;
-            graphics.DrawImage(source, new Rectangle(0, 0, width, height), 0, 0, source.Width, source.Height, GraphicsUnit.Pixel);
+            var destination = new Rectangle(0, 0, width, height);
+            if (requireTransparency)
+            {
+                // Mirror the edge pixels so scaling an opaque file cannot create transparent edges.
+                using var edges = new ImageAttributes();
+                edges.SetWrapMode(WrapMode.TileFlipXY);
+                graphics.DrawImage(source, destination, 0, 0, source.Width, source.Height, GraphicsUnit.Pixel, edges);
+            }
+            else graphics.DrawImage(source, destination, 0, 0, source.Width, source.Height, GraphicsUnit.Pixel);
         }
 
         bool isBongo = name.StartsWith("hand_bongo_cat", StringComparison.Ordinal);
+        bool transparent = false;
         int left = width, right = -1, top = height, bottom = -1;
         int tipY = -1, tipLeft = width, tipRight = -1;
         var data = sample.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
@@ -147,6 +189,7 @@ internal sealed class Artwork : IDisposable
                 for (int x = 0; x < width; x++)
                 {
                     int alpha = row[x * 4 + 3];
+                    if (alpha == 0) transparent = true;
                     if (alpha > 38)
                     {
                         left = Math.Min(left, x);
@@ -163,7 +206,9 @@ internal sealed class Artwork : IDisposable
             }
         }
         finally { sample.UnlockBits(data); }
-        if (right < left) return null;
+        if (right < left || (requireTransparency && tipY < 0)) return null;
+        if (requireTransparency && !transparent)
+            throw new InvalidDataException("У PNG нет прозрачного фона. Скачайте файл с настоящей прозрачностью.");
 
         var crop = Rectangle.Intersect(new Rectangle(0, 0, width, height),
             Rectangle.FromLTRB(left - 2, top - 2, right + 3, bottom + 3));

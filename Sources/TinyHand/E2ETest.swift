@@ -80,6 +80,13 @@ enum E2ETest {
             post(.leftMouseUp, p)
             pump(0.25)
         }
+        func pressEscape() {
+            for down in [true, false] {
+                CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: down)?.post(tap: .cghidEventTap)
+                pump(0.1)
+            }
+            pump(0.2)
+        }
         func state(_ label: String, _ overlay: OverlayController) {
             let m = NSEvent.mouseLocation
             let down = CGEventSource.buttonState(.hidSystemState, button: .left)
@@ -88,7 +95,7 @@ enum E2ETest {
         }
 
         let defaults = UserDefaults.standard
-        let preferenceKeys = ["pointerMode", "pointerStyle", "interactKey", "recentStyles", OverlayController.hintShownKey]
+        let preferenceKeys = ["pointerMode", "pointerStyle", "pointerSize", "interactKey", "recentStyles", OverlayController.hintShownKey]
         let savedPreferences = preferenceKeys.map { ($0, defaults.object(forKey: $0)) }
         Preferences.pointerMode = .control
         Preferences.interactKey = .option
@@ -108,6 +115,29 @@ enum E2ETest {
             print(condition ? "PASS \(description)" : "FAIL \(description)")
             passed = passed && condition
         }
+        func checkSizeSlider(in mode: PointerMode) {
+            Preferences.pointerSize = Preferences.pointerSizeRange.lowerBound
+            clickToolbar(at: overlay.toolbarSizeCenter)
+            guard let upper = overlay.sizeSliderPoint(at: 0.75), let lower = overlay.sizeSliderPoint(at: 0.25) else {
+                check(false, "size popup opens in \(mode.rawValue)")
+                return
+            }
+            clickToolbar(at: upper)
+            let clickedSize = Preferences.pointerSize
+            check(clickedSize > 0.15, "clicking the size slider changes the preference in \(mode.rawValue)")
+
+            let start = CGPoint(x: upper.x, y: screen.frame.height - upper.y)
+            let end = CGPoint(x: lower.x, y: screen.frame.height - lower.y)
+            post(.leftMouseDown, start)
+            post(.leftMouseDragged, end)
+            post(.leftMouseUp, end)
+            pump(0.25)
+            check(Preferences.pointerSize < clickedSize, "dragging the size slider changes the preference in \(mode.rawValue)")
+
+            pressEscape()
+            check(overlay.isActive && overlay.sizeSliderPoint(at: 0.5) == nil,
+                  "Esc dismisses size popup and keeps the pointer active in \(mode.rawValue)")
+        }
         check(overlay.activate(), "pointer activation")
         pump(0.3)
 
@@ -125,6 +155,7 @@ enum E2ETest {
         check(catcherView.clicks == 1 && catcherView.rightClicks == 1 && catcherView.drags > 0 && catcherView.scrolls > 0,
               "Control delivers left click, right click, drag and scroll")
         check(overlay.inkStrokes == 0, "Control creates no ink")
+        checkSizeSlider(in: .control)
         clickToolbar(at: overlay.toolbarModeCenter(.draw))
         check(overlay.mode == .draw, "toolbar switches from Control to Draw")
         guard overlay.mode == .draw else { return false }
@@ -195,14 +226,12 @@ enum E2ETest {
         print(String(format: "longest a click waited to reach the tap during the stall: %.1f ms", overlay.tapMaxWaitMs))
         check(catcherView.clicks == originalClicks + 1, "Draw captures clicks while the main thread is stalled")
 
+        checkSizeSlider(in: .draw)
+
         clickToolbar(at: overlay.toolbarModeCenter(.control))
         check(overlay.mode == .control, "toolbar switches from Draw to Control")
 
-        for down in [true, false] {
-            CGEvent(keyboardEventSource: source, virtualKey: 0x35, keyDown: down)?.post(tap: .cghidEventTap)
-            pump(0.1)
-        }
-        pump(0.2)
+        pressEscape()
         check(!overlay.isActive, "Esc exits Control")
         return passed
     }

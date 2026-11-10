@@ -26,7 +26,16 @@ internal static class Program
 
 internal sealed record Settings(string Style = "lavender", bool Sound = true, bool Motion = true)
 {
-    private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PlayPointer", "preferences.json");
+    internal static string DataDirectory
+    {
+        get
+        {
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (local.Length == 0) throw new IOException("Недоступна папка локальных данных PlayPointer.");
+            return Path.Combine(local, "PlayPointer");
+        }
+    }
+    private static string FilePath => Path.Combine(DataDirectory, "preferences.json");
 
     internal static Settings Load()
     {
@@ -34,7 +43,7 @@ internal sealed record Settings(string Style = "lavender", bool Sound = true, bo
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { return new Settings(); }
     }
 
-    internal void Save()
+    internal bool Save()
     {
         try
         {
@@ -42,8 +51,9 @@ internal sealed record Settings(string Style = "lavender", bool Sound = true, bo
             var temp = FilePath + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(this));
             File.Move(temp, FilePath, overwrite: true);
+            return true;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 }
 
@@ -75,7 +85,7 @@ internal sealed class PlayPointerContext : ApplicationContext
     internal PlayPointerContext()
     {
         style = PointerCatalog.All.FirstOrDefault(item => item.Id == settings.Style)
-            ?? PointerCatalog.All.FirstOrDefault(item => item.Id == "lavender") ?? PointerCatalog.Laser;
+            ?? PointerCatalog.Default;
         using (var iconStream = typeof(Program).Assembly.GetManifestResourceStream("PlayPointer.Windows.PlayPointer.ico"))
         {
             if (iconStream is null) icon = (Icon)SystemIcons.Application.Clone();
@@ -135,7 +145,13 @@ internal sealed class PlayPointerContext : ApplicationContext
                 {
                     SetScreens();
                     sprite = new PointerSprite();
-                    sprite.SetStyle(style);
+                    try { sprite.SetStyle(style); }
+                    catch (Exception e) when (style.Group == CustomPointers.Group && CustomAssetError(e))
+                    {
+                        style = PointerCatalog.Default;
+                        sprite.SetStyle(style);
+                        error = "Сохранённый PNG недоступен. Выбран стандартный указатель.";
+                    }
                 }
                 if (next == PointerMode.Draw)
                 {
@@ -200,7 +216,7 @@ internal sealed class PlayPointerContext : ApplicationContext
         finally { dialogOpen = false; }
     }
 
-    private void SelectStyle(PointerStyle next)
+    private bool SelectStyle(PointerStyle next)
     {
         try
         {
@@ -208,11 +224,17 @@ internal sealed class PlayPointerContext : ApplicationContext
             style = next;
             bongoNext = 0;
             settings = settings with { Style = next.Id };
-            settings.Save();
-            error = null;
+            error = settings.Save() ? null : "Указатель выбран. Не удалось сохранить выбор для следующего запуска.";
             UpdateUi();
+            return true;
         }
-        catch (Exception e) when (OverlayError(e)) { Fail(e); }
+        catch (Exception e) when (next.Group == CustomPointers.Group && CustomAssetError(e))
+        {
+            error = "Не удалось открыть PNG своего указателя.";
+            UpdateUi();
+            return false;
+        }
+        catch (Exception e) when (OverlayError(e)) { Fail(e); return false; }
     }
 
     private void ShowPanel()
@@ -471,6 +493,9 @@ internal sealed class PlayPointerContext : ApplicationContext
 
     private static bool OverlayError(Exception e) => e is Win32Exception or ExternalException or ArgumentException
         or InvalidOperationException or OutOfMemoryException or IOException or UnauthorizedAccessException;
+
+    private static bool CustomAssetError(Exception e) => e is InvalidDataException or IOException or UnauthorizedAccessException
+        or ArgumentException or ExternalException or OutOfMemoryException;
 
     protected override void ExitThreadCore()
     {

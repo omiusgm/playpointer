@@ -336,6 +336,10 @@ struct HandAsset {
             // The wooden handle starts below the gold rim of the blue fitting.
             return measure(image, fixedWristFraction: 0.644)
         default:
+            if name.hasPrefix("custom-"),
+               let asset = measure(image, fixedWristFraction: HandMaker.wristFraction) {
+                return asset
+            }
             return measure(image)
         }
     }

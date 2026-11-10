@@ -49,6 +49,11 @@ if let idx = CommandLine.arguments.firstIndex(of: "--toolbar-test") {
             print("rendered \(catalogOut)")
         }
     }
+    if CommandLine.arguments.contains("--size"), let data = bar.snapshotSize()?.representation(using: .png, properties: [:]) {
+        let sizeOut = out.replacingOccurrences(of: ".png", with: "-size.png")
+        try? data.write(to: URL(fileURLWithPath: sizeOut))
+        print("rendered \(sizeOut)")
+    }
     if CommandLine.arguments.contains("--ink"), let data = bar.snapshotInkTray()?.representation(using: .png, properties: [:]) {
         let trayOut = out.replacingOccurrences(of: ".png", with: "-ink.png")
         try? data.write(to: URL(fileURLWithPath: trayOut))

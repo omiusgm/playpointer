@@ -38,6 +38,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         window?.makeFirstResponder(nil)
     }
 
+    func showMakePointer() {
+        model.startMakingHand()
+        show(.pointers)
+    }
+
     func snapshot(_ section: SettingsSection = .general, dark: Bool = false) -> CGImage? {
         if window == nil {
             build()

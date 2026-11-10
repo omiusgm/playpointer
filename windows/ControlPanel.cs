@@ -118,7 +118,7 @@ internal sealed class CatalogWindow : Form
     private readonly Button choose = new() { Text = "Выбрать", AutoSize = true };
     private Artwork? artwork;
 
-    internal CatalogWindow(PointerStyle selected, Action<PointerStyle> onChoose, Icon icon)
+    internal CatalogWindow(PointerStyle selected, Func<PointerStyle, bool> onChoose, Icon icon)
     {
         Text = "Каталог указателей · PlayPointer";
         Icon = icon;
@@ -133,7 +133,8 @@ internal sealed class CatalogWindow : Form
         category.AccessibleName = "Категория";
         search.AccessibleName = "Поиск по названию";
         list.AccessibleName = "Указатели";
-        category.Items.AddRange(["Все указатели", PointerCatalog.Cats, PointerCatalog.Fun, PointerCatalog.Hands, PointerCatalog.Basic]);
+        category.Items.AddRange(["Все указатели", PointerCatalog.Cats, PointerCatalog.Fun, PointerCatalog.Hands,
+            PointerCatalog.Basic, CustomPointers.Group]);
         category.SelectedIndex = 0;
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 2, RowCount = 3 };
@@ -146,8 +147,9 @@ internal sealed class CatalogWindow : Form
         filters.Controls.AddRange([category, search]);
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill };
         var close = new Button { Text = "Закрыть", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var add = new Button { Text = "+ Свой указатель…", AutoSize = true };
         close.Click += (_, _) => Close();
-        buttons.Controls.AddRange([choose, close]);
+        buttons.Controls.AddRange([choose, close, add]);
         root.Controls.Add(filters, 0, 0);
         root.SetColumnSpan(filters, 2);
         root.Controls.Add(list, 0, 1);
@@ -158,17 +160,34 @@ internal sealed class CatalogWindow : Form
         CancelButton = close;
         AcceptButton = choose;
         choose.Click += (_, _) => Pick();
-        list.DoubleClick += (_, _) => Pick();
+        add.Click += (_, _) =>
+        {
+            using var dialog = new CustomPointerDialog(icon);
+            if (dialog.ShowDialog(this) == DialogResult.OK && dialog.AddedPointer is PointerStyle added)
+                Pick(added);
+        };
+        list.DoubleClick += (_, _) => { if (choose.Enabled) Pick(); };
         list.SelectedIndexChanged += (_, _) => ShowPreview();
         category.SelectedIndexChanged += (_, _) => Fill();
         search.TextChanged += (_, _) => Fill();
         Fill(selected);
 
-        void Pick()
+        void Pick(PointerStyle? imported = null)
         {
-            if (list.SelectedItem is not PointerStyle item) return;
-            onChoose(item);
-            Close();
+            if ((imported ?? list.SelectedItem as PointerStyle) is not PointerStyle item) return;
+            if (onChoose(item))
+            {
+                Close();
+                return;
+            }
+            if (imported is not null)
+            {
+                search.Clear();
+                category.SelectedItem = CustomPointers.Group;
+                Fill(item);
+            }
+            MessageBox.Show(this, "Не удалось выбрать указатель. Проверьте доступ к файлу или выберите другой указатель.",
+                "PlayPointer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -186,12 +205,13 @@ internal sealed class CatalogWindow : Form
             if (list.SelectedIndex < 0 && options.Length > 0) list.SelectedIndex = 0;
         }
         finally { list.EndUpdate(); }
-        choose.Enabled = options.Length > 0;
+        choose.Enabled = preview.Image is not null;
     }
 
     private void ShowPreview()
     {
         ReleasePreview();
+        choose.Enabled = false;
         if (list.SelectedItem is not PointerStyle style) return;
         if (style.Asset is null)
         {
@@ -201,14 +221,17 @@ internal sealed class CatalogWindow : Form
             using var brush = new SolidBrush(style.Color);
             g.FillEllipse(brush, 42, 42, 16, 16);
             preview.Image = image;
+            choose.Enabled = true;
             return;
         }
         try
         {
             artwork = Artwork.Load(style.Asset, style.Pixelated);
             preview.Image = artwork?.Image;
+            choose.Enabled = artwork is not null;
         }
-        catch (Exception e) when (e is IOException or ArgumentException or OutOfMemoryException or System.Runtime.InteropServices.ExternalException) { }
+        catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException
+            or OutOfMemoryException or System.Runtime.InteropServices.ExternalException) { }
     }
 
     private void ReleasePreview()
