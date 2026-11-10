@@ -14,6 +14,7 @@ internal static class Native
     internal const int WmMouseActivate = 0x0021;
     internal const int WmSettingChange = 0x001A;
     internal const int WmDisplayChange = 0x007E;
+    internal const int WmInput = 0x00FF;
     internal const int WmHotKey = 0x0312;
     internal const int WmDpiChanged = 0x02E0;
     internal const int WmMouseMove = 0x0200;
@@ -30,6 +31,12 @@ internal static class Native
     internal const int VkLButton = 0x01;
     internal const int VkRButton = 0x02;
     internal const int VkMenu = 0x12;
+    internal const ushort RawLeftDown = 0x0001;
+    internal const ushort RawRightDown = 0x0004;
+    private const uint RidevRemove = 0x0001;
+    private const uint RidevInputSink = 0x0100;
+    private const uint RidInput = 0x10000003;
+    private const uint RimTypeMouse = 0;
     internal const uint ModAlt = 0x0001;
     internal const uint ModControl = 0x0002;
     internal const uint ModNoRepeat = 0x4000;
@@ -40,7 +47,37 @@ internal static class Native
     internal const int SwShowNa = 8;
     internal const uint SndAsync = 0x0001;
     internal const uint SndNoDefault = 0x0002;
-    internal const uint SndFileName = 0x00020000;
+    internal const uint SndMemory = 0x0004;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RawInputDevice
+    {
+        internal ushort UsagePage, Usage;
+        internal uint Flags;
+        internal nint Target;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RawInputHeader
+    {
+        internal uint Type, Size;
+        internal nint Device;
+        internal nuint WParam;
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    private struct RawMouse
+    {
+        // usButtonFlags is the low word of the aligned ulButtons union.
+        [FieldOffset(4)] internal ushort ButtonFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RawMouseInput
+    {
+        internal RawInputHeader Header;
+        internal RawMouse Mouse;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct Point32(int x, int y)
@@ -90,6 +127,19 @@ internal static class Native
     internal static extern bool GetCursorPos(out Point32 position);
 
     [DllImport("user32.dll")]
+    private static extern uint GetMessagePos();
+
+    [DllImport("user32.dll")]
+    internal static extern int GetMessageTime();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool RegisterRawInputDevices(ref RawInputDevice device, uint count, uint size);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern unsafe uint GetRawInputData(nint input, uint command, void* data, ref uint size, uint headerSize);
+
+    [DllImport("user32.dll")]
     internal static extern short GetAsyncKeyState(int virtualKey);
 
     [DllImport("user32.dll")]
@@ -134,9 +184,37 @@ internal static class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool DeleteDC(nint deviceContext);
 
-    [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+    [DllImport("winmm.dll", EntryPoint = "PlaySoundW", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool PlaySound(string? fileName, nint module, uint flags);
+    internal static extern bool PlaySound(nint sound, nint module, uint flags);
+
+    internal static unsafe bool RegisterRawMouse(nint window, bool enabled)
+    {
+        var device = new RawInputDevice
+        {
+            UsagePage = 0x01, // Generic Desktop Controls
+            Usage = 0x02, // Mouse
+            Flags = enabled ? RidevInputSink : RidevRemove,
+            Target = enabled ? window : 0
+        };
+        return RegisterRawInputDevices(ref device, 1, (uint)sizeof(RawInputDevice));
+    }
+
+    internal static unsafe ushort ReadRawMouseDown(nint input)
+    {
+        RawMouseInput data = default;
+        uint size = (uint)sizeof(RawMouseInput);
+        uint bytesRead = GetRawInputData(input, RidInput, &data, ref size, (uint)sizeof(RawInputHeader));
+        if (bytesRead != (uint)sizeof(RawMouseInput) || data.Header.Type != RimTypeMouse)
+            return 0;
+        return (ushort)(data.Mouse.ButtonFlags & (RawLeftDown | RawRightDown));
+    }
+
+    internal static Point MouseMessagePosition()
+    {
+        uint packed = GetMessagePos();
+        return new Point(unchecked((short)packed), unchecked((short)(packed >> 16)));
+    }
 
     internal static bool KeyDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 

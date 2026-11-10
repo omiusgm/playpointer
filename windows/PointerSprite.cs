@@ -218,6 +218,18 @@ internal sealed class PointerSprite : LayerWindow
     private void DrawHotspot(Graphics g, Point cursor, float scale, bool missingFrame)
     {
         Color hotColor = style.IsCat || style.Kind == PointerKind.Laser ? PointerCatalog.Laser.Color : style.Color;
+        if (style.Kind == PointerKind.Laser)
+        {
+            // The native cursor can cover the center of the overlay. Mark the perimeter as well.
+            float radius = 19f * scale;
+            var ring = new RectangleF(cursor.X - radius, cursor.Y - radius, radius * 2, radius * 2);
+            using var outline = new Pen(Color.FromArgb(244, 32, 12, 19), 5.5f * scale);
+            using var highlight = new Pen(Color.White, 3.6f * scale);
+            using var accent = new Pen(hotColor, 2f * scale);
+            g.DrawEllipse(outline, ring);
+            g.DrawEllipse(highlight, ring);
+            g.DrawEllipse(accent, ring);
+        }
         float hotRadius = (style.IsCat || missingFrame ? 4.8f : 2.7f) * scale;
         using var dot = new SolidBrush(hotColor);
         using var edge = new Pen(Color.FromArgb(225, Color.White), 1.25f * scale);

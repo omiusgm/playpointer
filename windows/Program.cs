@@ -66,8 +66,8 @@ internal sealed class PlayPointerContext : ApplicationContext
     private Screen[] screens = [];
     private Rectangle lastScreen;
     private Point? inkPoint;
-    private bool inputShown, primary, secondary, menuOpen, dialogOpen, disposed;
-    private long rebuildAt;
+    private bool inputShown, menuOpen, dialogOpen, disposed;
+    private long rebuildAt, modeStartedAt;
     private float monitorScale = 1;
     private string? error;
     private int bongoNext;
@@ -85,7 +85,8 @@ internal sealed class PlayPointerContext : ApplicationContext
                 icon = (Icon)source.Clone();
             }
         }
-        hotkeys = new HotkeyWindow(OnHotkey, DisplayChanged);
+        hotkeys = new HotkeyWindow(OnHotkey, DisplayChanged, OnRawMouseDown);
+        ClickAudio.Warm();
         panel = new ControlPanel(this, icon, settings);
         panel.VisibleChanged += (_, _) =>
         {
@@ -135,7 +136,6 @@ internal sealed class PlayPointerContext : ApplicationContext
                     SetScreens();
                     sprite = new PointerSprite();
                     sprite.SetStyle(style);
-                    ReadButtons();
                 }
                 if (next == PointerMode.Draw)
                 {
@@ -145,6 +145,8 @@ internal sealed class PlayPointerContext : ApplicationContext
                 }
                 else RemoveInput();
                 mode = next;
+                modeStartedAt = Environment.TickCount64;
+                hotkeys.SetRawMouse(true);
                 timer.Start();
                 Tick();
             }
@@ -163,7 +165,7 @@ internal sealed class PlayPointerContext : ApplicationContext
     {
         settings = settings with { Sound = enabled };
         settings.Save();
-        if (!enabled) Native.PlaySound(null, 0, 0);
+        if (!enabled) ClickAudio.Stop();
     }
 
     internal void SetMotion(bool enabled)
@@ -285,7 +287,6 @@ internal sealed class PlayPointerContext : ApplicationContext
             {
                 PauseInput();
                 sprite.Reset();
-                ReadButtons();
                 return;
             }
             Point cursor = position.DrawingPoint;
@@ -294,7 +295,6 @@ internal sealed class PlayPointerContext : ApplicationContext
             {
                 PauseInput();
                 sprite.Reset();
-                ReadButtons();
                 return;
             }
             if (lastScreen != screen.Bounds)
@@ -303,20 +303,15 @@ internal sealed class PlayPointerContext : ApplicationContext
                 monitorScale = hotkeys.MeasureScale(lastScreen);
             }
 
-            bool uiBusy = menuOpen || dialogOpen || catalog is not null;
+            bool uiBusy = UiBusy;
             if (uiBusy || mode != PointerMode.Draw || Native.KeyDown(Native.VkMenu)) PauseInput();
             else ResumeInput();
-            bool overPanel = panel.Visible && panel.WindowState != FormWindowState.Minimized && panel.Bounds.Contains(cursor);
-            bool wasPrimary = primary, wasSecondary = secondary;
-            ReadButtons();
-            if (!primary || overPanel || !screen.WorkingArea.Contains(cursor)) inkPoint = null;
+            bool overPanel = OverPanel(cursor);
+            // A release outside our draw windows can finish ink, but polling never creates a click.
+            if (inkPoint is not null && (!PrimaryHeld() || overPanel || !screen.WorkingArea.Contains(cursor))) inkPoint = null;
             bool pointerVisible = !uiBusy && !overPanel;
             if (pointerVisible)
             {
-                if (!inputShown && ((!wasPrimary && primary) || (!wasSecondary && secondary)))
-                    React(cursor, now, !wasPrimary && primary);
-                else if (inputShown && !wasSecondary && secondary && style.Kind != PointerKind.Bongo)
-                    React(cursor, now, false);
                 sprite.Render(cursor, screen.Bounds, monitorScale, now, !settings.Motion || !SystemInformation.UIEffectsEnabled);
             }
             else sprite.Reset();
@@ -332,11 +327,37 @@ internal sealed class PlayPointerContext : ApplicationContext
         catch (Exception e) when (OverlayError(e)) { Fail(e); }
     }
 
-    private void ReadButtons()
+    private bool UiBusy => menuOpen || dialogOpen || catalog is not null;
+
+    private bool OverPanel(Point cursor) =>
+        panel.Visible && panel.WindowState != FormWindowState.Minimized && panel.Bounds.Contains(cursor);
+
+    private static bool ButtonsSwapped => Native.GetSystemMetrics(Native.SmSwapButton) != 0;
+
+    private static bool PrimaryHeld() => Native.KeyDown(ButtonsSwapped ? Native.VkRButton : Native.VkLButton);
+
+    private bool IsCurrentMouseMessage()
     {
-        bool swapped = Native.GetSystemMetrics(Native.SmSwapButton) != 0;
-        primary = Native.KeyDown(swapped ? Native.VkRButton : Native.VkLButton);
-        secondary = Native.KeyDown(swapped ? Native.VkLButton : Native.VkRButton);
+        long now = Environment.TickCount64;
+        int messageAge = unchecked((int)now - Native.GetMessageTime());
+        return messageAge <= now - modeStartedAt;
+    }
+
+    private void OnRawMouseDown(ushort buttons, Point cursor)
+    {
+        if (mode == PointerMode.Off || sprite is null || UiBusy || !IsCurrentMouseMessage()
+            || OverPanel(cursor) || !screens.Any(screen => screen.Bounds.Contains(cursor)))
+            return;
+
+        bool swapped = ButtonsSwapped;
+        bool primary = (buttons & (swapped ? Native.RawRightDown : Native.RawLeftDown)) != 0;
+        bool secondary = (buttons & (swapped ? Native.RawLeftDown : Native.RawRightDown)) != 0;
+        // The draw windows own primary reactions whenever their input layer is showing.
+        // Alt passthrough starts using Raw Input after the draw windows are hidden.
+        bool reactToPrimary = primary && !inputShown;
+        if (!reactToPrimary && !secondary) return;
+        try { React(cursor, Environment.TickCount64, reactToPrimary); }
+        catch (Exception e) when (OverlayError(e)) { Fail(e); }
     }
 
     private void OnDrawMouse(int message, Point cursor, bool primaryHeld)
@@ -346,6 +367,7 @@ internal sealed class PlayPointerContext : ApplicationContext
         {
             if (message == Native.WmLeftDown)
             {
+                if (!IsCurrentMouseMessage() || UiBusy || OverPanel(cursor)) return;
                 inkPoint = cursor;
                 canvas.Add(cursor, cursor, style.Color, 5 * monitorScale);
                 React(cursor, Environment.TickCount64, true);
@@ -391,10 +413,9 @@ internal sealed class PlayPointerContext : ApplicationContext
             PointerKind.Bongo => reaction == 0 ? "tap_bongo_left.wav" : "tap_bongo_right.wav",
             PointerKind.Wand => "tap_magic.wav",
             _ when style.Id == "squeaky" => "tap_squeak.wav",
-            _ => "tap_click.wav"
+            _ => ClickAudio.Standard
         };
-        var path = Path.Combine(AppContext.BaseDirectory, "assets", "sounds", sound);
-        if (File.Exists(path)) Native.PlaySound(path, 0, Native.SndFileName | Native.SndAsync | Native.SndNoDefault);
+        ClickAudio.Play(sound);
     }
 
     private void DisplayChanged() => rebuildAt = Environment.TickCount64 + 150;
@@ -412,7 +433,10 @@ internal sealed class PlayPointerContext : ApplicationContext
 
     private void UpdateUi()
     {
-        panel.UpdateState(mode, style, hotkeys.Description, error);
+        string shortcuts = hotkeys.Description;
+        if (mode != PointerMode.Off && !hotkeys.RawMouseRegistered)
+            shortcuts += "\nWindows не передаёт фоновые события мыши. Реакция на основную кнопку доступна при рисовании.";
+        panel.UpdateState(mode, style, shortcuts, error);
         controlItem.Checked = mode == PointerMode.Control;
         drawItem.Checked = mode == PointerMode.Draw;
         clearItem.Enabled = stopItem.Enabled = mode != PointerMode.Off;
@@ -427,12 +451,13 @@ internal sealed class PlayPointerContext : ApplicationContext
     private void Disable()
     {
         mode = PointerMode.Off;
+        hotkeys.SetRawMouse(false);
         timer.Stop();
         RemoveInput();
         Clear();
         sprite?.Dispose();
         sprite = null;
-        Native.PlaySound(null, 0, 0);
+        ClickAudio.Stop();
     }
 
     private void Fail(Exception exception)
@@ -469,7 +494,9 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
 {
     private readonly Action<int> onHotkey;
     private readonly Action onDisplayChange;
+    private readonly Action<ushort, Point> onRawMouseDown;
     private readonly HashSet<int> registered = [];
+    internal bool RawMouseRegistered { get; private set; }
     private static readonly (int Id, Keys Key, string Label)[] shortcuts =
     [
         (1, Keys.H, "H — вкл./выкл."),
@@ -478,10 +505,11 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
         (4, Keys.Escape, "Esc — выключить")
     ];
 
-    internal HotkeyWindow(Action<int> onHotkey, Action onDisplayChange)
+    internal HotkeyWindow(Action<int> onHotkey, Action onDisplayChange, Action<ushort, Point> onRawMouseDown)
     {
         this.onHotkey = onHotkey;
         this.onDisplayChange = onDisplayChange;
+        this.onRawMouseDown = onRawMouseDown;
         CreateHandle(new CreateParams { Caption = "PlayPointer hotkeys", Style = Native.Popup,
             ExStyle = Native.NoActivate | Native.ToolWindow, Width = 1, Height = 1 });
         foreach (var shortcut in shortcuts)
@@ -510,8 +538,24 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
         return dpi == 0 ? 1 : Math.Clamp(dpi / 96f, 0.75f, 4f);
     }
 
+    internal void SetRawMouse(bool enabled)
+    {
+        if (RawMouseRegistered != enabled && Native.RegisterRawMouse(Handle, enabled))
+            RawMouseRegistered = enabled;
+    }
+
     protected override void WndProc(ref Message message)
     {
+        if (message.Msg == Native.WmInput)
+        {
+            if (RawMouseRegistered)
+            {
+                ushort buttons = Native.ReadRawMouseDown(message.LParam);
+                if (buttons != 0) onRawMouseDown(buttons, Native.MouseMessagePosition());
+            }
+            base.WndProc(ref message); // DefWindowProc performs the foreground raw-input cleanup.
+            return;
+        }
         if (message.Msg == Native.WmHotKey)
         {
             onHotkey(unchecked((int)message.WParam));
@@ -524,6 +568,7 @@ internal sealed class HotkeyWindow : NativeWindow, IDisposable
 
     public void Dispose()
     {
+        SetRawMouse(false);
         foreach (int id in registered) Native.UnregisterHotKey(Handle, id);
         DestroyHandle();
     }
