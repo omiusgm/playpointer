@@ -24,7 +24,7 @@ internal static class Program
     }
 }
 
-internal sealed record Settings(string Style = "lavender", bool Sound = true, bool Motion = true)
+internal sealed record Settings(string Style = "lavender", bool Sound = true, bool Motion = true, int TapLevel = 2)
 {
     internal static string DataDirectory
     {
@@ -39,7 +39,11 @@ internal sealed record Settings(string Style = "lavender", bool Sound = true, bo
 
     internal static Settings Load()
     {
-        try { return JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings(); }
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new Settings();
+            return loaded with { TapLevel = Math.Clamp(loaded.TapLevel, 0, 4) };
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { return new Settings(); }
     }
 
@@ -67,6 +71,7 @@ internal sealed class PlayPointerContext : ApplicationContext
     private readonly ToolStripMenuItem controlItem, drawItem, stopItem, clearItem;
     private readonly Icon icon;
     private readonly InkCanvas canvas = new();
+    private readonly TapImpact tapImpact = new();
     private readonly List<DrawInputWindow> inputWindows = [];
     private Settings settings = Settings.Load();
     private PointerStyle style;
@@ -132,6 +137,8 @@ internal sealed class PlayPointerContext : ApplicationContext
     internal void SetMode(PointerMode next)
     {
         if (mode == next) return;
+        tapImpact.Reset();
+        sprite?.Reset();
         try
         {
             error = null;
@@ -191,6 +198,15 @@ internal sealed class PlayPointerContext : ApplicationContext
         sprite?.Reset();
     }
 
+    internal void SetTapLevel(int level)
+    {
+        settings = settings with { TapLevel = Math.Clamp(level, 0, 4) };
+        tapImpact.Reset();
+        sprite?.Reset();
+        error = settings.Save() ? null : "Сила клика выбрана. Не удалось сохранить настройку.";
+        UpdateUi();
+    }
+
     internal void ShowCatalog()
     {
         PauseInput();
@@ -223,6 +239,7 @@ internal sealed class PlayPointerContext : ApplicationContext
             sprite?.SetStyle(next);
             style = next;
             bongoNext = 0;
+            tapImpact.Reset();
             settings = settings with { Style = next.Id };
             error = settings.Save() ? null : "Указатель выбран. Не удалось сохранить выбор для следующего запуска.";
             UpdateUi();
@@ -428,7 +445,10 @@ internal sealed class PlayPointerContext : ApplicationContext
             reaction = bongoNext;
             bongoNext ^= 1;
         }
-        sprite?.Pulse(cursor, now, reaction);
+        float strength = primaryButton
+            ? tapImpact.AcceptPrimary(now, settings.TapLevel)
+            : TapImpact.BaseStrength(settings.TapLevel);
+        sprite?.Pulse(cursor, now, reaction, strength);
         if (!settings.Sound) return;
         string sound = style.Kind switch
         {
@@ -472,6 +492,7 @@ internal sealed class PlayPointerContext : ApplicationContext
 
     private void Disable()
     {
+        tapImpact.Reset();
         mode = PointerMode.Off;
         hotkeys.SetRawMouse(false);
         timer.Stop();

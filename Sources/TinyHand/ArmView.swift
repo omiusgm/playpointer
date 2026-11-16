@@ -228,16 +228,17 @@ final class ArmView: NSView {
         fatalError("init(coder:) not used")
     }
 
-    func press(at now: CFTimeInterval = CACurrentMediaTime()) {
+    func press(at now: CFTimeInterval = CACurrentMediaTime(), strength: CGFloat = 1) {
         if pointerHidden && (style.isCatFollower || pressedAsset != nil || isBongoCat) { return }
-        pressAmount = 1
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        pressAmount = reduceMotion ? 0 : min(1.15, strength)
         if isBongoCat {
             bongoPhase = bongoPhase == 0 ? 1 : 0
             bongoPendingNote = bongoPhase
         }
         if pressedAsset != nil || alternateAsset != nil {
             if style == .catChaser {
-                catPounce = (now, nil)
+                catPounce = reduceMotion ? nil : (now, nil)
                 reactionUntil = now + catPounceDuration
             } else {
                 reactionUntil = now + 0.15
@@ -254,8 +255,9 @@ final class ArmView: NSView {
         return pressedAsset ?? alternateAsset
     }
 
-    func showWandSparks(at cursor: CGPoint) {
-        guard isWand, !pointerHidden, let asset, let layer else { return }
+    func showWandSparks(at cursor: CGPoint, strength: CGFloat = 1) {
+        guard isWand, !pointerHidden, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let asset, let layer else { return }
         aim(cursor: cursor)
         stopWandSparks()
 
@@ -271,7 +273,7 @@ final class ArmView: NSView {
         for (index, spark) in wandSparks.enumerated() {
             let spread = CGFloat(index) / CGFloat(wandSparks.count - 1) - 0.5
             let angle = heading + spread * 2.6 + CGFloat.random(in: -0.12...0.12)
-            let distance = CGFloat.random(in: 20...57)
+            let distance = CGFloat.random(in: 20...57) * sqrt(strength)
             let start = CGPoint(x: tip.x + cos(angle) * 3, y: tip.y + sin(angle) * 3)
             let end = CGPoint(x: tip.x + cos(angle) * distance, y: tip.y + sin(angle) * distance)
             let lifetime = Double.random(in: 0.20...maxLifetime)
@@ -521,6 +523,11 @@ final class ArmView: NSView {
     }
 
     func aim(cursor: CGPoint, at now: CFTimeInterval = CACurrentMediaTime()) {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            pressAmount = 0
+            catPounce = nil
+            stopWandSparks()
+        }
         if let burst = wandBurst,
            now >= burst.endsAt || hypot(cursor.x - burst.cursor.x, cursor.y - burst.cursor.y) > 6 {
             stopWandSparks()

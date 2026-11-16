@@ -19,6 +19,7 @@ internal sealed class PointerSprite : LayerWindow
     private long pulseAt = -1000;
     private long lastRendered = -1000;
     private int reaction;
+    private float impactStrength = 1;
     private float lastScale;
     private float bongoSpan = DefaultSpan;
     private int nyanDirection = -1, trailSegment;
@@ -67,11 +68,12 @@ internal sealed class PointerSprite : LayerWindow
         HideLayer();
     }
 
-    internal void Pulse(Point cursor, long time, int button)
+    internal void Pulse(Point cursor, long time, int button, float strength)
     {
         pulseOrigin = cursor;
         pulseAt = time;
         reaction = button;
+        impactStrength = Math.Clamp(strength, 0.35f, 2f);
         dirty = true;
     }
 
@@ -101,8 +103,13 @@ internal sealed class PointerSprite : LayerWindow
             _ => style.IsCat ? 194 : DefaultSpan
         };
         int side = (int)Math.Ceiling(span * 2 * scale);
-        var size = new Size(side, side);
-        if (bufferSize != size)
+        var canvas = new Rectangle(cursor.X - side / 2, cursor.Y - side / 2, side, side);
+        bool drawImpact = elapsed is >= 0 and < 360 && !reducedMotion
+            && DistanceSquared(cursor, pulseOrigin) <= (260 * scale) * (260 * scale);
+        if (drawImpact) canvas = TapImpact.IncludePulse(canvas, cursor, pulseOrigin, scale);
+        int step = Math.Max(1, (int)Math.Ceiling(32 * scale));
+        var size = new Size((canvas.Width + step - 1) / step * step, (canvas.Height + step - 1) / step * step);
+        if (buffer is null || bufferSize.Width < size.Width || bufferSize.Height < size.Height)
         {
             buffer?.Dispose();
             buffer = null;
@@ -110,7 +117,7 @@ internal sealed class PointerSprite : LayerWindow
             buffer = new LayerBuffer(size);
             bufferSize = size;
         }
-        var origin = new Point(cursor.X - side / 2, cursor.Y - side / 2);
+        var origin = canvas.Location;
         buffer!.Clear();
         var g = buffer.Graphics;
         g.ResetTransform();
@@ -149,11 +156,22 @@ internal sealed class PointerSprite : LayerWindow
             {
                 artRect = new RectangleF(cursor.X - hotspot.X * factor, cursor.Y - hotspot.Y * factor, width, height);
             }
+            if (elapsed is >= 0 and < 160 && !reducedMotion)
+            {
+                float compression = 0.07f * impactStrength * MathF.Sin(MathF.PI * elapsed / 160f);
+                float sx = 1 + compression * 0.55f, sy = 1 - compression;
+                var pivot = style.IsCat && !chasePose
+                    ? new PointF(artRect.Left + artRect.Width / 2, artRect.Top + artRect.Height / 2)
+                    : chasePose ? new PointF(pulseOrigin.X, pulseOrigin.Y) : new PointF(cursor.X, cursor.Y);
+                artRect = new RectangleF(pivot.X + (artRect.Left - pivot.X) * sx,
+                    pivot.Y + (artRect.Top - pivot.Y) * sy, artRect.Width * sx, artRect.Height * sy);
+            }
             if (style.Kind == PointerKind.Nyan && !reducedMotion)
             {
                 var emitter = frame.TrailEmitter ?? new PointF(frame.Image.Width * 0.20f, frame.Image.Height * 0.42f);
                 if (mirrored) emitter.X = frame.Image.Width - emitter.X;
-                var tail = new PointF(artRect.Left + emitter.X * factor, artRect.Top + emitter.Y * factor);
+                var tail = new PointF(artRect.Left + emitter.X / frame.Image.Width * artRect.Width,
+                    artRect.Top + emitter.Y / frame.Image.Height * artRect.Height);
                 if (moved && (trail.Count == 0 || trail[^1].Segment != trailSegment || DistanceSquared(trail[^1].Point, tail) >= 4))
                     trail.Add((tail, now, trailSegment));
                 trail.RemoveAll(point => now - point.Time > 480 || DistanceSquared(point.Point, cursor) > MathF.Pow(220 * scale, 2));
@@ -174,14 +192,15 @@ internal sealed class PointerSprite : LayerWindow
             else g.DrawImage(frame.Image, artRect, source, GraphicsUnit.Pixel);
         }
 
-        if (animatePulse && elapsed < 360 && !reducedMotion)
+        if (drawImpact)
         {
             float progress = elapsed / 360f;
             var pulse = new PointF(pulseOrigin.X, pulseOrigin.Y);
-            using var ring = new Pen(Color.FromArgb((int)(210 * (1 - progress)), style.Color), 2.1f * scale);
-            float radius = (8 + 19 * progress) * scale;
+            using var ring = new Pen(Color.FromArgb((int)(210 * (1 - progress)), style.Color),
+                2.1f * scale * MathF.Sqrt(impactStrength));
+            float radius = (8 + 19 * progress) * scale * impactStrength;
             g.DrawEllipse(ring, pulse.X - radius, pulse.Y - radius, radius * 2, radius * 2);
-            if (style.Kind == PointerKind.Wand) DrawSparks(g, pulse, scale, progress);
+            if (style.Kind == PointerKind.Wand) DrawSparks(g, pulse, scale, progress, impactStrength);
             if (style.Kind == PointerKind.Bongo) DrawNotes(g, artRect, scale, progress, reaction);
         }
 
@@ -292,13 +311,13 @@ internal sealed class PointerSprite : LayerWindow
         }
     }
 
-    private static void DrawSparks(Graphics g, PointF point, float scale, float progress)
+    private static void DrawSparks(Graphics g, PointF point, float scale, float progress, float strength)
     {
         using var pen = new Pen(Color.FromArgb((int)(230 * (1 - progress)), 244, 172, 33), 2f * scale);
         for (int i = 0; i < 8; ++i)
         {
             float angle = (i + 0.5f) * MathF.Tau / 8;
-            float spread = (12 + 32 * progress) * scale;
+            float spread = (12 + 32 * progress) * scale * strength;
             float x = MathF.Cos(angle), y = MathF.Sin(angle);
             g.DrawLine(pen, point.X + x * spread, point.Y + y * spread,
                 point.X + x * (spread + 6 * scale), point.Y + y * (spread + 6 * scale));

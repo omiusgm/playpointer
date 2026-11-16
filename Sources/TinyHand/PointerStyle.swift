@@ -37,6 +37,10 @@ struct PointerStyle: Hashable {
     static let laser = PointerStyle("laser")
 
     private static let builtIn: [(id: String, title: String, ink: CGColor)] = [
+        ("presenterHand", "Сливочная рука", Ink.hex(0xE8C78A)),
+        ("presenterPaw", "Лапка-подушка", Ink.hex(0xF38A9E)),
+        ("presenterCheeky", "Мятный бунтарь", Ink.hex(0x69D3AE)),
+        ("presenterArrow", "Коралловая стрелка", Ink.hex(0xFA785D)),
         ("catLaser", "Лапка за лазером", Ink.hex(0xD78461)),
         ("catChaser", "Котик за лазером", Ink.hex(0xD78461)),
         ("catPixel", "Пиксельный кот", Ink.hex(0xD78461)),
@@ -120,7 +124,7 @@ struct PointerStyle: Hashable {
 
     static let defaultPinned: [PointerStyle] = [.squeaky, .rocket, .catLaser, .lavender, .glove, .laser]
 
-    var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" || self == .nyanFlight || self == .bongoCat }
+    var isStandaloneCursor: Bool { rawValue == "funny18" || rawValue == "funny19" || rawValue == "presenterArrow" || self == .nyanFlight || self == .bongoCat }
 
     var isCatFollower: Bool { self == .catLaser || self == .catChaser || self == .catPixel || self == .catFish }
 
@@ -335,6 +339,10 @@ struct HandAsset {
         case "hand_wand_v2":
             // The wooden handle starts below the gold rim of the blue fitting.
             return measure(image, fixedWristFraction: 0.644)
+        case "hand_presenterHand", "hand_presenterPaw", "hand_presenterCheeky":
+            return measure(image, fixedWristFraction: HandMaker.wristFraction)
+        case "hand_presenterArrow":
+            return measureStandalone(image)
         default:
             if name.hasPrefix("custom-"),
                let asset = measure(image, fixedWristFraction: HandMaker.wristFraction) {

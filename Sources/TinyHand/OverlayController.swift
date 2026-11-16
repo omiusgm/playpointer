@@ -12,6 +12,8 @@ final class OverlayController {
     private let inputTap = InputTap()
     private let tapSound = TapSound()
     private let clickPulse = ClickPulse()
+    private var clickCadence = ClickCadence()
+    private var clickStrength = Preferences.clickStrength
     private(set) var mode = Preferences.pointerMode
     private var controlMonitors: [Any] = []
     private var drawModeButtons: Set<Int64> = []
@@ -71,7 +73,8 @@ final class OverlayController {
             }
             self.toolbar.closePopup()
             self.drawModeButtons.insert(button)
-            self.armView.press()
+            let strength = self.reactionStrength(primary: button == 0 && feedback == .draw)
+            self.armView.press(strength: strength)
             self.armView.held = true
             if feedback == .draw {
                 self.tapSound.play(magic: self.armView.isWand, bongo: self.armView.bongoTap)
@@ -79,7 +82,7 @@ final class OverlayController {
                 if button == 0 {
                     self.downPoint = self.localMouse()
                 }
-                self.showClickFeedback(at: OverlayController.cgPoint(location), primary: button == 0)
+                self.showClickFeedback(at: OverlayController.cgPoint(location), primary: button == 0, strength: strength)
             }
             self.noteButtonEvent()
         }
@@ -137,6 +140,11 @@ final class OverlayController {
         tapSound.enabled = soundOn
         toolbar.setSoundOn(soundOn)
         NotificationCenter.default.addObserver(forName: Preferences.changed, object: nil, queue: .main) { [weak self] _ in
+            if let self, self.clickStrength != Preferences.clickStrength {
+                self.clickStrength = Preferences.clickStrength
+                self.clickCadence.reset()
+                self.clickPulse.clear()
+            }
             self?.syncSound()
             self?.syncMode()
             self?.inputTap.interactKey = Preferences.interactKey.cgFlags
@@ -161,6 +169,7 @@ final class OverlayController {
     var onSoundChanged: (() -> Void)?
 
     func pick(_ style: PointerStyle) {
+        clickCadence.reset()
         clickPulse.clear()
         armView.setStyle(style)
         PointerStyle.saved = armView.style
@@ -196,6 +205,7 @@ final class OverlayController {
         let selected = Preferences.pointerMode
         guard mode != selected else { return }
         mode = selected
+        clickCadence.reset()
         release()
         toolbar.closePopup()
         toolbar.selectMode(selected)
@@ -218,6 +228,7 @@ final class OverlayController {
         }
         ownMenuOpen = suspended
         if suspended {
+            clickCadence.reset()
             toolbar.closePopup()
             release()
         }
@@ -348,6 +359,7 @@ final class OverlayController {
     }
 
     func deactivate() {
+        clickCadence.reset()
         guard isActive else {
             return
         }
@@ -408,6 +420,7 @@ final class OverlayController {
             normalCursor = normal
             armView.pointerHidden = normal
             if normal {
+                clickCadence.reset()
                 clickPulse.clear()
                 CursorHider.show()
             } else {
@@ -511,20 +524,28 @@ final class OverlayController {
         notePassThroughPress(at: location)
         let point = OverlayController.cgPoint(location)
         if toolbar.popupFrame?.contains(point) == true || (toolbar.revealed && toolbar.frame.contains(point)) { return }
-        armView.press()
+        let primary = event.type == .leftMouseDown
+        let strength = reactionStrength(primary: primary)
+        armView.press(strength: strength)
         tapSound.play(magic: armView.isWand, bongo: armView.bongoTap)
-        showClickFeedback(at: point, primary: event.type == .leftMouseDown)
+        showClickFeedback(at: point, primary: primary, strength: strength)
     }
 
-    private func showClickFeedback(at mouse: CGPoint, primary: Bool) {
+    private func reactionStrength(primary: Bool) -> CGFloat {
+        guard primary, !armView.pointerHidden else { return clickStrength.amplitude }
+        return clickCadence.register(at: CACurrentMediaTime(), strength: clickStrength)
+    }
+
+    private func showClickFeedback(at mouse: CGPoint, primary: Bool, strength: CGFloat) {
         guard isActive, primary || armView.isWand else { return }
         if currentFrame?.contains(mouse) != true { tick() }
         guard !armView.pointerHidden, let frame = currentFrame, frame.contains(mouse) else { return }
         let point = CGPoint(x: mouse.x - frame.minX, y: mouse.y - frame.minY)
+        if let layer = armView.layer {
+            clickPulse.show(at: point, color: armView.style.inkColor, strength: strength, in: layer)
+        }
         if armView.isWand {
-            armView.showWandSparks(at: point)
-        } else if !armView.isBongoCat, let layer = armView.layer {
-            clickPulse.show(at: point, color: armView.style.inkColor, in: layer)
+            armView.showWandSparks(at: point, strength: strength)
         }
     }
 

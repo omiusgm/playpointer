@@ -47,6 +47,8 @@ final class Toolbar {
     private var sizeButton: Button?
     private var popup: (kind: PopupKind, panel: Panel, anchor: Button)?
     private weak var sizeSlider: SizeSlider?
+    private weak var strengthControl: ModeControl?
+    private weak var strengthLabel: NSTextField?
     private var inkButton: Button?
     private var swatches: [InkChoice: Button] = [:]
     private var inkOpen = false
@@ -193,6 +195,7 @@ final class Toolbar {
         }
         NotificationCenter.default.addObserver(forName: Preferences.changed, object: nil, queue: .main) { [weak self] _ in
             self?.syncSizeSlider()
+            self?.syncClickStrength()
             self?.rebuildStyles()
             self?.refreshInk()
         }
@@ -252,8 +255,8 @@ final class Toolbar {
     private func showSize(present: Bool = true) {
         guard let button = sizeButton, let screen = panel.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
-        let width = min(270, visible.width - 24)
-        let height: CGFloat = 76
+        let width = min(340, visible.width - 24)
+        let height: CGFloat = 152
         guard width >= 170, panel.frame.maxY + height + 8 <= visible.maxY else { return }
         let pop = makePopup(width: width, height: height, anchor: button, visible: visible)
         guard let glass = pop.contentView else { return }
@@ -288,6 +291,27 @@ final class Toolbar {
         content.orientation = .vertical
         content.alignment = .leading
         content.spacing = 7
+        let strengthTitle = NSTextField(labelWithString: "Сила клика")
+        strengthTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        strengthTitle.textColor = NSColor(white: 1, alpha: 0.9)
+        strengthLabel = strengthTitle
+        let choices = ModeControl()
+        choices.segmentCount = ClickStrength.allCases.count
+        choices.trackingMode = .selectOne
+        choices.segmentStyle = .rounded
+        choices.setAccessibilityLabel("Сила клика")
+        for (index, strength) in ClickStrength.allCases.enumerated() {
+            choices.setLabel(strength.title, forSegment: index)
+            choices.setWidth(56, forSegment: index)
+            choices.setToolTip(strength.title, forSegment: index)
+        }
+        choices.target = self
+        choices.action = #selector(changeClickStrength(_:))
+        strengthControl = choices
+        content.addArrangedSubview(strengthTitle)
+        content.addArrangedSubview(choices)
+        content.setCustomSpacing(14, after: row)
+        syncClickStrength()
         content.translatesAutoresizingMaskIntoConstraints = false
         glass.addSubview(content)
         NSLayoutConstraint.activate([
@@ -297,7 +321,7 @@ final class Toolbar {
             row.widthAnchor.constraint(equalTo: content.widthAnchor),
         ])
 
-        openPopup(.size, panel: pop, anchor: button, closeLabel: "Закрыть настройку размера", present: present)
+        openPopup(.size, panel: pop, anchor: button, closeLabel: "Закрыть настройки размера и силы клика", present: present)
     }
 
     private func makePopup(width: CGFloat, height: CGFloat, anchor button: Button, visible: CGRect) -> Panel {
@@ -349,6 +373,17 @@ final class Toolbar {
     private func syncSizeSlider() {
         let value = Double(Preferences.pointerSize)
         if let sizeSlider, sizeSlider.doubleValue != value { sizeSlider.doubleValue = value }
+    }
+
+    private func syncClickStrength() {
+        let strength = Preferences.clickStrength
+        strengthControl?.selectedSegment = ClickStrength.allCases.firstIndex(of: strength) ?? 2
+        strengthLabel?.stringValue = "Сила клика · \(strength.title)"
+    }
+
+    @objc private func changeClickStrength(_ sender: NSSegmentedControl) {
+        guard ClickStrength.allCases.indices.contains(sender.selectedSegment) else { return }
+        Preferences.clickStrength = ClickStrength.allCases[sender.selectedSegment]
     }
 
     @objc private func changePointerSize(_ slider: NSSlider) {

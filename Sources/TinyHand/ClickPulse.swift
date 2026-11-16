@@ -5,11 +5,11 @@ final class ClickPulse {
     private let rings = (0..<3).map { _ in CAShapeLayer() }
     private var nextRing = 0
 
-    func show(at point: CGPoint, color: CGColor, in layer: CALayer) {
+    func show(at point: CGPoint, color: CGColor, strength: CGFloat = 1, in layer: CALayer) {
         let ring = rings[nextRing]
         nextRing = (nextRing + 1) % rings.count
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let radius: CGFloat = 12
+        let radius: CGFloat = reduceMotion ? 12 : 12 * sqrt(strength)
         let duration: CFTimeInterval = 0.27
 
         CATransaction.begin()
@@ -22,7 +22,7 @@ final class ClickPulse {
         ring.fillColor = nil
         let tint = NSColor(cgColor: color)?.blended(withFraction: 0.34, of: .white)
         ring.strokeColor = tint?.cgColor ?? NSColor.white.cgColor
-        ring.lineWidth = 2
+        ring.lineWidth = reduceMotion ? 2 : min(3, 1 + strength)
         ring.shadowColor = NSColor.black.cgColor
         ring.shadowOffset = CGSize(width: 0, height: -1)
         ring.shadowRadius = 2

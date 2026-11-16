@@ -65,7 +65,36 @@ enum InputTapTest {
         send(.leftMouseDown, expect: .leftMouseDown)
         send(.leftMouseUp, expect: .leftMouseUp)
 
-        if passed { print("PASS input routing for Control, Draw, toolbar, and mode changes during a press") }
+        for strength in ClickStrength.allCases {
+            var cadence = ClickCadence()
+            let first = cadence.register(at: 10, strength: strength)
+            var boosted = first
+            for index in 1...100 {
+                boosted = cadence.register(at: 10 + Double(index) * 0.05, strength: strength)
+            }
+            let cooled = cadence.register(at: 20, strength: strength)
+            cadence.reset()
+            let reset = cadence.register(at: 20.01, strength: strength)
+            if first != strength.amplitude || boosted <= first || boosted > 2.1
+                || cooled != first || reset != first {
+                print("FAIL click cadence \(strength.rawValue)")
+                passed = false
+            }
+        }
+        let root = CALayer()
+        let pulse = ClickPulse()
+        let point = CGPoint(x: 103, y: 207)
+        for _ in 0..<20 { pulse.show(at: point, color: NSColor.white.cgColor, strength: 2.1, in: root) }
+        if root.sublayers?.count != 3 || root.sublayers?.contains(where: { $0.position != point }) == true {
+            print("FAIL click pulse origin or layer bound")
+            passed = false
+        }
+        pulse.clear()
+        if root.sublayers?.contains(where: { !($0.animationKeys() ?? []).isEmpty }) == true {
+            print("FAIL click pulse clear")
+            passed = false
+        }
+        if passed { print("PASS input routing, bounded click cadence and anchored click pulse") }
         return passed
     }
 }

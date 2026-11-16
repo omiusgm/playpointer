@@ -106,7 +106,7 @@ if let idx = CommandLine.arguments.firstIndex(of: "--make-hand"), CommandLine.ar
 }
 
 if CommandLine.arguments.contains("--asset-test") {
-    let styles = PointerStyle.catStyles + PointerStyle.funStyles
+    let styles = PointerStyle.builtInHands
     var failed = false
     for style in styles {
         guard let name = style.assetName, let asset = HandAsset.load(name),

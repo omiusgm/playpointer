@@ -32,6 +32,10 @@ internal static class PointerCatalog
     private static readonly IReadOnlyList<PointerStyle> BuiltIn = new PointerStyle[]
     {
         Laser,
+        Style("presenterHand", "Сливочная рука", 0xE8C78A),
+        Style("presenterPaw", "Лапка-подушка", 0xF38A9E, Cats),
+        Style("presenterCheeky", "Мятный бунтарь", 0x69D3AE),
+        Style("presenterArrow", "Коралловая стрелка", 0xFA785D, Basic),
         Style("catLaser", "Лапка за лазером", 0xD78461, Cats, asset: "hand_cat_laser", kind: PointerKind.Cat),
         Style("catChaser", "Котик за лазером", 0xD78461, Cats, asset: "hand_cat_chaser", kind: PointerKind.Cat, reacts: true),
         Style("catPixel", "Пиксельный кот", 0xD78461, Cats, asset: "hand_cat_pixel", kind: PointerKind.PixelCat, reacts: true),

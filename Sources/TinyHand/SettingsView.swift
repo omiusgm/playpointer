@@ -574,6 +574,16 @@ private struct AppearancePage: View {
                     Image(systemName: "hand.point.up.left.fill").font(.system(size: 16)).foregroundColor(.secondary)
                 }
             }
+            Row("Сила клика", detail: "Частые нажатия немного усиливают эффект.") {
+                Picker("Сила клика", selection: model.binding({ Preferences.clickStrength }, { Preferences.clickStrength = $0 })) {
+                    ForEach(ClickStrength.allCases, id: \.self) { strength in
+                        Text(strength.title).tag(strength)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
             Row("Тень под указателем") {
                 Toggle("", isOn: model.binding({ Preferences.showShadow }, { Preferences.showShadow = $0 }))
                     .toggleStyle(.switch).labelsHidden().focusable(false)

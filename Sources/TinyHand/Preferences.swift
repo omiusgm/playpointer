@@ -121,6 +121,11 @@ enum Preferences {
         set { set(Double(newValue), "pointerSize") }
     }
 
+    static var clickStrength: ClickStrength {
+        get { defaults.string(forKey: "clickStrength").flatMap(ClickStrength.init(rawValue:)) ?? .normal }
+        set { set(newValue.rawValue, "clickStrength") }
+    }
+
     static var showShadow: Bool {
         get { defaults.object(forKey: "showShadow") as? Bool ?? true }
         set { set(newValue, "showShadow") }
@@ -216,7 +221,7 @@ enum Preferences {
     static func resetAll() {
         for key in ["shortcut.toggle", "shortcut.clear", "pointerSize", "showShadow", "fadeSeconds",
                     "sound.hands", "sound.laser", "interactKey", "interactKeepsHand", "pinnedStyles", "pointerStyle",
-                    "inkChoice", "showInkButton", "tapSound", "pointerMode", recentStylesKey] {
+                    "inkChoice", "showInkButton", "tapSound", "pointerMode", recentStylesKey, "clickStrength"] {
             defaults.removeObject(forKey: key)
         }
         NotificationCenter.default.post(name: changed, object: nil)

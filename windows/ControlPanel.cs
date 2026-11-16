@@ -18,8 +18,8 @@ internal sealed class ControlPanel : Form
         Icon = icon;
         Font = SystemFonts.MessageBoxFont;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(452, 370);
-        MinimumSize = new Size(470, 410);
+        ClientSize = new Size(452, 409);
+        MinimumSize = new Size(470, 449);
         StartPosition = FormStartPosition.CenterScreen;
         TopMost = true;
         MaximizeBox = false;
@@ -57,6 +57,18 @@ internal sealed class ControlPanel : Form
         sound.CheckedChanged += (_, _) => app.SetSound(sound.Checked);
         motion.CheckedChanged += (_, _) => app.SetMotion(motion.Checked);
         stack.Controls.Add(Row(sound, motion));
+        var tapLevel = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList, Width = 145, AccessibleName = "Сила клика"
+        };
+        tapLevel.Items.AddRange(["Тихо", "Мягко", "Обычно", "Ярко", "Шоу"]);
+        tapLevel.SelectedIndex = Math.Clamp(settings.TapLevel, 0, 4);
+        tapLevel.SelectedIndexChanged += (_, _) => app.SetTapLevel(tapLevel.SelectedIndex);
+        var tapLabel = new Label
+        {
+            Text = "Сила клика", AutoSize = true, Margin = new Padding(3, 6, 12, 0)
+        };
+        stack.Controls.Add(Row(tapLabel, tapLevel));
         hotkeys.Margin = new Padding(3, 10, 3, 10);
         stack.Controls.Add(hotkeys);
 
