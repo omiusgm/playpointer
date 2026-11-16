@@ -12,6 +12,7 @@ internal sealed class PointerSprite : LayerWindow
     private LayerBuffer? buffer;
     private Size bufferSize;
     private Artwork? idle, pressed, alternate;
+    private ComicHandRenderer? comicHand;
     private PointerStyle style = PointerCatalog.Laser;
     private Point? lastCursor;
     private PointF? cat;
@@ -31,25 +32,31 @@ internal sealed class PointerSprite : LayerWindow
     internal void SetStyle(PointerStyle newStyle)
     {
         Artwork? nextIdle = null, nextPressed = null, nextAlternate = null;
+        ComicHandRenderer? nextComicHand = null;
         try
         {
             nextIdle = Artwork.Load(newStyle.Asset, newStyle.Pixelated);
             nextPressed = Artwork.Load(newStyle.Pressed, newStyle.Pixelated);
             nextAlternate = Artwork.Load(newStyle.Alternate, newStyle.Pixelated);
+            if (newStyle.Id == "comicHand")
+                nextComicHand = new ComicHandRenderer(Artwork.PathFor(newStyle.Asset!));
         }
         catch
         {
             nextIdle?.Dispose();
             nextPressed?.Dispose();
             nextAlternate?.Dispose();
+            nextComicHand?.Dispose();
             throw;
         }
         idle?.Dispose();
         pressed?.Dispose();
         alternate?.Dispose();
+        comicHand?.Dispose();
         idle = nextIdle;
         pressed = nextPressed;
         alternate = nextAlternate;
+        comicHand = nextComicHand;
         style = newStyle;
         bongoSpan = style.Kind == PointerKind.Bongo ? BongoSpan(idle, pressed, alternate) : DefaultSpan;
         Reset();
@@ -65,6 +72,7 @@ internal sealed class PointerSprite : LayerWindow
         trailSegment = 0;
         pulseAt = -1000;
         dirty = true;
+        comicHand?.Hide();
         HideLayer();
     }
 
@@ -84,6 +92,11 @@ internal sealed class PointerSprite : LayerWindow
         bool animatePulse = elapsed < 360 || lastRendered - pulseAt < 360;
         bool animateTrail = trail.Count > 0;
         if (!moved && !dirty && !animatePulse && !animateTrail && !style.IsCat) return;
+        if (comicHand is not null)
+        {
+            RenderComicHand(cursor, screen, scale, now, elapsed, reducedMotion);
+            return;
+        }
         bool flyingNyan = style.Id == "funny21";
         if (lastCursor is Point previous && DistanceSquared(previous, cursor) > (330 * scale) * (330 * scale))
         {
@@ -216,7 +229,65 @@ internal sealed class PointerSprite : LayerWindow
 
     internal void Raise()
     {
+        comicHand?.Raise();
         Native.SetWindowPos(Handle, -1, 0, 0, 0, 0, Native.SwpNoSize | Native.SwpNoMove | Native.SwpNoActivate);
+    }
+
+    private void RenderComicHand(Point cursor, Rectangle screen, float scale, long now, long elapsed, bool reducedMotion)
+    {
+        var pose = comicHand!.Pose(cursor, screen, scale, elapsed, impactStrength, reducedMotion);
+        var canvas = pose.Bounds;
+        bool impact = !reducedMotion && elapsed is >= 0 and < 220
+            && DistanceSquared(cursor, pulseOrigin) <= (260 * scale) * (260 * scale);
+        if (impact) canvas = TapImpact.IncludePulse(canvas, cursor, pulseOrigin, scale);
+        canvas = Rectangle.Intersect(canvas, screen);
+        if (canvas.Width <= 0 || canvas.Height <= 0) { Reset(); return; }
+        int step = Math.Max(1, (int)MathF.Ceiling(32 * scale));
+        var size = new Size((canvas.Width + step - 1) / step * step, (canvas.Height + step - 1) / step * step);
+        if (buffer is null || bufferSize.Width < size.Width || bufferSize.Height < size.Height)
+        {
+            buffer?.Dispose();
+            buffer = null;
+            bufferSize = Size.Empty;
+            buffer = new LayerBuffer(size);
+            bufferSize = size;
+        }
+        buffer.Clear();
+        var graphics = buffer.Graphics;
+        graphics.ResetTransform();
+        graphics.TranslateTransform(-canvas.X, -canvas.Y);
+        var saved = graphics.Save();
+        graphics.SetClip(canvas);
+        comicHand.DrawArm(pose, screen);
+        comicHand.DrawHead(graphics, pose);
+        if (impact) DrawComicImpact(graphics, pulseOrigin, scale, elapsed / 220f, impactStrength);
+        graphics.Restore(saved);
+        buffer.Present(Handle, canvas.Location);
+        ShowLayer();
+        lastCursor = cursor;
+        lastScale = scale;
+        lastRendered = now;
+        dirty = false;
+    }
+
+    private static void DrawComicImpact(Graphics graphics, Point cursor, float scale, float progress, float strength)
+    {
+        int alpha = (int)(255 * (1 - progress) * (1 - progress));
+        using var white = new Pen(Color.FromArgb(alpha, Color.White), 5 * scale)
+            { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var black = new Pen(Color.FromArgb(alpha, Color.Black), 2.2f * scale)
+            { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        for (int index = 0; index < 9; index++)
+        {
+            float angle = (-165 + index * 30) * MathF.PI / 180;
+            float radius = (14 + 24 * progress) * scale * MathF.Sqrt(strength);
+            float length = (index % 2 == 0 ? 11 : 7) * scale * strength;
+            float dx = MathF.Cos(angle), dy = MathF.Sin(angle);
+            var start = new PointF(cursor.X + dx * radius, cursor.Y + dy * radius);
+            var end = new PointF(start.X + dx * length, start.Y + dy * length);
+            graphics.DrawLine(white, start, end);
+            graphics.DrawLine(black, start, end);
+        }
     }
 
     private void UpdateNyanDirection(int dx, float scale)
@@ -351,5 +422,6 @@ internal sealed class PointerSprite : LayerWindow
         idle?.Dispose();
         pressed?.Dispose();
         alternate?.Dispose();
+        comicHand?.Dispose();
     }
 }

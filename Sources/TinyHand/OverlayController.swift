@@ -542,7 +542,11 @@ final class OverlayController {
         guard !armView.pointerHidden, let frame = currentFrame, frame.contains(mouse) else { return }
         let point = CGPoint(x: mouse.x - frame.minX, y: mouse.y - frame.minY)
         if let layer = armView.layer {
-            clickPulse.show(at: point, color: armView.style.inkColor, strength: strength, in: layer)
+            if armView.style.rawValue == "comicHand" {
+                clickPulse.showComic(at: point, strength: strength, in: layer)
+            } else {
+                clickPulse.show(at: point, color: armView.style.inkColor, strength: strength, in: layer)
+            }
         }
         if armView.isWand {
             armView.showWandSparks(at: point, strength: strength)

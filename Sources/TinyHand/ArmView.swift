@@ -29,6 +29,7 @@ final class ArmView: NSView {
     var inkWidth: CGFloat { max(3, bounds.height * 0.0055) }
 
     private var pressAmount: CGFloat = 0
+    private var comicTap: (startedAt: CFTimeInterval, strength: CGFloat)?
     private var reactionUntil: CFTimeInterval?
     private var gripX: CGFloat?
     private var lastPose: [CGFloat] = []
@@ -84,6 +85,7 @@ final class ArmView: NSView {
     private var nextBongoNote = 0
 
     var isSettling: Bool {
+        if comicTap != nil { return true }
         if pressAmount > 0.002 || reactionUntil != nil {
             return true
         }
@@ -232,6 +234,9 @@ final class ArmView: NSView {
         if pointerHidden && (style.isCatFollower || pressedAsset != nil || isBongoCat) { return }
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         pressAmount = reduceMotion ? 0 : min(1.15, strength)
+        if style.rawValue == "comicHand", !pointerHidden {
+            comicTap = reduceMotion ? nil : (now, min(2.1, max(0.35, strength)))
+        }
         if isBongoCat {
             bongoPhase = bongoPhase == 0 ? 1 : 0
             bongoPendingNote = bongoPhase
@@ -304,6 +309,7 @@ final class ArmView: NSView {
     }
 
     func clearPointerEffects() {
+        comicTap = nil
         stopWandSparks()
         reactionUntil = nil
         catPounce = nil
@@ -524,6 +530,7 @@ final class ArmView: NSView {
 
     func aim(cursor: CGPoint, at now: CFTimeInterval = CACurrentMediaTime()) {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            comicTap = nil
             pressAmount = 0
             catPounce = nil
             stopWandSparks()
@@ -576,9 +583,22 @@ final class ArmView: NSView {
         let reach = hypot(dx, dy)
         let aimAngle = atan2(dy, dx)
 
-        let handPts = rodHandLenFrac * screenH * (1 - 0.06 * pressAmount)
+        let comic = style.rawValue == "comicHand"
+        var squash: CGFloat = 1
+        var comicTilt: CGFloat = 0
+        if comic, let tap = comicTap {
+            let progress = max(0, now - tap.startedAt) / 0.18
+            if progress < 1 {
+                let rebound = CGFloat(sin(progress * 2 * .pi) * exp(-progress * 2.5)) * tap.strength
+                squash = 1 - 0.13 * rebound
+                comicTilt = 0.09 * rebound
+            } else {
+                comicTap = nil
+            }
+        }
+        let handPts = rodHandLenFrac * screenH * (comic ? squash : 1 - 0.06 * pressAmount)
         let s = handPts / (a.wrist - a.handTop)
-        let widthPts = s * a.aspect
+        let widthPts = s * a.aspect * (comic ? 1 / (squash * squash) : 1)
         let handTipPts = (a.wrist - a.tip) * s
         let tipOffX = (a.tipX - a.rodX) * widthPts
 
@@ -586,9 +606,15 @@ final class ArmView: NSView {
         let minRodLen = minRodFrac * screenH
         let rodLen = max(minRodLen, along - handTipPts)
         let tipAngle = atan2(rodLen + handTipPts, tipOffX)
-        let rotation = aimAngle - tipAngle
-        let keepsExactTip = isWand || pressedAsset != nil
-        if keepsExactTip && rodLen == minRodLen {
+        let rotation = aimAngle - tipAngle + comicTilt
+        let keepsExactTip = comic || isWand || pressedAsset != nil
+        if comic {
+            // Rotate and rebound around the actual tip, including near the lower screen edge.
+            let tipY = rodLen + handTipPts
+            grip = CGPoint(x: cursor.x - (tipOffX * cos(rotation) - tipY * sin(rotation)),
+                           y: cursor.y - (tipOffX * sin(rotation) + tipY * cos(rotation)))
+        }
+        if !comic && keepsExactTip && rodLen == minRodLen {
             // Keep the hotspot aligned even when the minimum rod length moves the grip back.
             let correction = reach - hypot(rodLen + handTipPts, tipOffX)
             grip.x += cos(aimAngle) * correction
@@ -616,7 +642,7 @@ final class ArmView: NSView {
         for sub in [rodLayer, handLayer] {
             sub.shadowOffset = shadowOffset
             sub.shadowRadius = max(1, lift * 0.35) + 5 * pressAmount
-            sub.shadowOpacity = showShadow ? Float(0.26 + 0.02 * pressAmount) : 0
+            sub.shadowOpacity = !comic && showShadow ? Float(0.26 + 0.02 * pressAmount) : 0
         }
 
         rodLayer.bounds = CGRect(x: 0, y: 0, width: widthPts, height: rodLen)

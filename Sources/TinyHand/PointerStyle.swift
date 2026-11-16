@@ -38,7 +38,7 @@ struct PointerStyle: Hashable {
 
     private static let builtIn: [(id: String, title: String, ink: CGColor)] = [
         ("presenterHand", "Сливочная рука", Ink.hex(0xE8C78A)),
-        ("presenterPaw", "Лапка-подушка", Ink.hex(0xF38A9E)),
+        ("comicHand", "Комиксная рука", Ink.hex(0x191919)),
         ("presenterCheeky", "Мятный бунтарь", Ink.hex(0x69D3AE)),
         ("presenterArrow", "Коралловая стрелка", Ink.hex(0xFA785D)),
         ("catLaser", "Лапка за лазером", Ink.hex(0xD78461)),
@@ -339,8 +339,10 @@ struct HandAsset {
         case "hand_wand_v2":
             // The wooden handle starts below the gold rim of the blue fitting.
             return measure(image, fixedWristFraction: 0.644)
-        case "hand_presenterHand", "hand_presenterPaw", "hand_presenterCheeky":
+        case "hand_presenterHand", "hand_presenterCheeky":
             return measure(image, fixedWristFraction: HandMaker.wristFraction)
+        case "hand_comicHand":
+            return measure(image, fixedWristFraction: 0.45576923076923076)
         case "hand_presenterArrow":
             return measureStandalone(image)
         default:

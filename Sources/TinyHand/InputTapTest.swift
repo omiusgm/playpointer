@@ -94,6 +94,44 @@ enum InputTapTest {
             print("FAIL click pulse clear")
             passed = false
         }
+        let comicRoot = CALayer()
+        for _ in 0..<20 { pulse.showComic(at: point, strength: 2.1, in: comicRoot) }
+        if comicRoot.sublayers?.count != 3
+            || comicRoot.sublayers?.contains(where: { $0.position != point || $0.sublayers?.count != 2 }) == true {
+            print("FAIL comic impact origin or layer bound")
+            passed = false
+        }
+        pulse.clear()
+        if comicRoot.sublayers?.contains(where: { !($0.animationKeys() ?? []).isEmpty }) == true {
+            print("FAIL comic impact clear")
+            passed = false
+        }
+        if let style = PointerStyle(rawValue: "comicHand"), let name = style.assetName, let asset = HandAsset.load(name) {
+            let view = ArmView(frame: CGRect(x: 0, y: 0, width: 1440, height: 900))
+            view.setStyle(style)
+            for target in [CGPoint(x: 600, y: 500), CGPoint(x: 400, y: 12), CGPoint(x: 1420, y: 850)] {
+                view.press(at: 100, strength: 2.1)
+                for elapsed in [0.0, 0.03, 0.08, 0.14, 0.2] {
+                    view.aim(cursor: target, at: 100 + elapsed)
+                    if let root = view.layer, let group = root.sublayers?[1],
+                       let hand = group.sublayers?.last {
+                        let inset = (asset.tip - asset.handTop) / (asset.wrist - asset.handTop) * hand.bounds.height
+                        let localTip = CGPoint(x: asset.tipX * group.bounds.width, y: group.bounds.maxY - inset)
+                        let renderedTip = group.convert(localTip, to: root)
+                        if hypot(renderedTip.x - target.x, renderedTip.y - target.y) > 0.01 {
+                            print("FAIL comic rebound hotspot")
+                            passed = false
+                        }
+                    } else {
+                        print("FAIL comic render layers")
+                        passed = false
+                    }
+                }
+            }
+        } else {
+            print("FAIL comic hand asset")
+            passed = false
+        }
         if passed { print("PASS input routing, bounded click cadence and anchored click pulse") }
         return passed
     }

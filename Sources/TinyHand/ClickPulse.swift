@@ -4,6 +4,61 @@ import AppKit
 final class ClickPulse {
     private let rings = (0..<3).map { _ in CAShapeLayer() }
     private var nextRing = 0
+    private lazy var comicImpacts = (0..<3).map { _ -> CALayer in
+        let impact = CALayer()
+        for color in [NSColor.white, NSColor.black] {
+            let strokes = CAShapeLayer()
+            strokes.fillColor = nil
+            strokes.strokeColor = color.cgColor
+            strokes.lineWidth = color == .white ? 4.5 : 2
+            strokes.lineCap = .round
+            impact.addSublayer(strokes)
+        }
+        impact.opacity = 0
+        return impact
+    }
+    private var nextImpact = 0
+
+    func showComic(at point: CGPoint, strength: CGFloat, in layer: CALayer) {
+        let impact = comicImpacts[nextImpact]
+        nextImpact = (nextImpact + 1) % comicImpacts.count
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let extent: CGFloat = reduceMotion ? 18 : 21 * sqrt(strength)
+        let path = CGMutablePath()
+        for index in 0..<9 {
+            let angle = CGFloat(index) * 2 * .pi / 9
+            let inner: CGFloat = index.isMultiple(of: 2) ? 8 : 11
+            let outer = extent * (index.isMultiple(of: 2) ? 1 : 0.8)
+            path.move(to: CGPoint(x: cos(angle) * inner, y: sin(angle) * inner))
+            path.addLine(to: CGPoint(x: cos(angle) * max(inner + 3, outer),
+                                    y: sin(angle) * max(inner + 3, outer)))
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        impact.removeAllAnimations()
+        if impact.superlayer !== layer { layer.addSublayer(impact) }
+        impact.position = point
+        for strokes in impact.sublayers ?? [] {
+            (strokes as? CAShapeLayer)?.path = path
+        }
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [1, 1, 0]
+        fade.keyTimes = [0, 0.22, 1]
+        fade.duration = 0.23
+        let burst = CAAnimationGroup()
+        burst.duration = fade.duration
+        burst.animations = [fade]
+        if !reduceMotion {
+            let grow = CABasicAnimation(keyPath: "transform.scale")
+            grow.fromValue = 0.72
+            grow.toValue = 1.15
+            grow.duration = burst.duration
+            grow.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            burst.animations?.append(grow)
+        }
+        impact.add(burst, forKey: "comicImpact")
+        CATransaction.commit()
+    }
 
     func show(at point: CGPoint, color: CGColor, strength: CGFloat = 1, in layer: CALayer) {
         let ring = rings[nextRing]
@@ -50,5 +105,6 @@ final class ClickPulse {
 
     func clear() {
         for ring in rings { ring.removeAllAnimations() }
+        for impact in comicImpacts { impact.removeAllAnimations() }
     }
 }

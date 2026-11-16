@@ -33,7 +33,7 @@ internal static class PointerCatalog
     {
         Laser,
         Style("presenterHand", "Сливочная рука", 0xE8C78A),
-        Style("presenterPaw", "Лапка-подушка", 0xF38A9E, Cats),
+        Style("comicHand", "Комиксная рука", 0x191919),
         Style("presenterCheeky", "Мятный бунтарь", 0x69D3AE),
         Style("presenterArrow", "Коралловая стрелка", 0xFA785D, Basic),
         Style("catLaser", "Лапка за лазером", 0xD78461, Cats, asset: "hand_cat_laser", kind: PointerKind.Cat),
