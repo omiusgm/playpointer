@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffe329">
+  <meta name="description" content="PlayPointer — 68 указателей для демонстрации экрана. Коты, мемы, искры и немного шума. Спецпоказ для VibeCodil.">
+  <title>PlayPointer — Охуенные курсоры для VibeCodil</title>
+  <link rel="icon" href="assets/funny22.webp" type="image/webp">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="cursors.js"></script>
+  <script defer src="demo.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">К содержанию</a>
+  <header class="top">
+    <nav class="wrap top__inner" aria-label="Разделы сайта">
+      <a class="wordmark" href="#main"><svg viewBox="0 0 32 34" aria-hidden="true"><path d="M3 2 28 21 17 22 11 32Z" fill="currentColor" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/><path d="m8 11 7 5m-5-1 1 6" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/></svg>PlayPointer</a>
+      <div class="social-links" role="group" aria-label="Соцсети Владимира Кривошеева">
+        <a href="https://www.instagram.com/krivosheev.vv/">Instagram</a>
+        <a href="https://t.me/omius">Telegram</a>
+        <a href="https://www.youtube.com/@krivosheev.v">YouTube</a>
+      </div>
+      <span class="top__author">Вайбкодил <b>Владимир Кривошеев</b></span>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero chapter" aria-labelledby="hero-title">
+      <div class="wrap hero__inner">
+        <h1 id="hero-title">Охуенные<br><span>курсоры.</span></h1>
+        <div class="hero__art" aria-hidden="true">
+          <svg class="hero__burst" viewBox="0 0 460 460"><path d="m224 8 50 80 82-48-8 90 95 6-55 75 67 53-90 27 21 93-86-31-25 91-66-68-66 68-20-94-94 21 37-86L6 244l74-51L36 118l94 4-1-94 72 56z" fill="currentColor" stroke="#191814" stroke-width="5" stroke-linejoin="round"/></svg>
+          <img class="hero__nyan" src="assets/funny21.webp" alt="" width="256" height="256" fetchpriority="high">
+          <img class="hero__cat" src="assets/funny22.webp" alt="" width="256" height="256" fetchpriority="high">
+          <span class="hero__stamp">68 штук<br>в комплекте</span>
+        </div>
+        <div class="hero__bottom">
+          <p>Включаешь демонстрацию экрана. Все смотрят на кота. Теперь можно начинать созвон.</p>
+          <div class="hero__actions">
+            <a class="button button--ink" href="#download">Установить <span aria-hidden="true">↓</span></a>
+            <a class="button button--outline" href="https://github.com/omiusgm/playpointer">GitHub <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div class="tape" aria-label="Для созвонов, уроков и презентаций">
+      <div class="tape__line" aria-hidden="true">
+        <span>◆ &nbsp; ЗУМ &nbsp; ◆ &nbsp; УРОКИ &nbsp; ◆ &nbsp; ПИТЧИ &nbsp; ◆ &nbsp; КОТЫ &nbsp;</span><span>◆ &nbsp; ЗУМ &nbsp; ◆ &nbsp; УРОКИ &nbsp; ◆ &nbsp; ПИТЧИ &nbsp; ◆ &nbsp; КОТЫ &nbsp;</span><span>◆ &nbsp; ЗУМ &nbsp; ◆ &nbsp; УРОКИ &nbsp; ◆ &nbsp; ПИТЧИ &nbsp; ◆ &nbsp; КОТЫ &nbsp;</span><span>◆ &nbsp; ЗУМ &nbsp; ◆ &nbsp; УРОКИ &nbsp; ◆ &nbsp; ПИТЧИ &nbsp; ◆ &nbsp; КОТЫ &nbsp;</span>
+      </div>
+    </div>
+    <section id="demo" class="demo chapter" aria-labelledby="demo-title">
+      <div class="wrap section-pad">
+        <div class="section-head">
+          <h2 id="demo-title">Проверка<br>связи.</h2>
+          <p>Води мышкой по сцене, щёлкай, пробуй разные указки. На телефоне можно тапать. Кот умеет тарабанить.</p>
+        </div>
+        <div class="console">
+          <div class="console__bar"><span class="live"><i aria-hidden="true"></i> СЦЕНА ВЕЩАНИЯ</span><span id="active-cursor" aria-live="polite">Комиксная рука</span></div>
+          <div class="demo-picks" role="group" aria-label="Быстрый выбор курсора">
+            <button type="button" data-demo-cursor="presenterHand" aria-pressed="false"><img src="assets/presenterHand.webp" width="48" height="48" alt="">Рука</button>
+            <button type="button" data-demo-cursor="comicHand" aria-pressed="false"><img src="assets/comicHand.webp" width="48" height="48" alt="">Комикс</button>
+            <button type="button" data-demo-cursor="presenterCheeky" aria-pressed="false"><img src="assets/presenterCheeky.webp" width="48" height="48" alt="">Дерзкий</button>
+            <button type="button" data-demo-cursor="presenterArrow" aria-pressed="false"><img src="assets/presenterArrow.webp" width="48" height="48" alt="">Стрелка</button>
+            <button type="button" data-demo-cursor="funny21" aria-pressed="false"><img src="assets/funny21.webp" width="48" height="48" alt="">Нянкэт</button>
+          </div>
+          <div id="arena" data-cursor="comicHand" tabindex="0" aria-label="Сцена для проверки курсоров" aria-describedby="arena-help">
+            <div class="arena__mark" aria-hidden="true"><span>ТЫК</span><svg viewBox="0 0 40 40"><path d="M20 0v40M0 20h40" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+            <div id="arena-effects" aria-hidden="true"></div>
+            <div id="arena-cursor" hidden aria-hidden="true">
+              <img class="arena-cursor__head" alt="" draggable="false" width="256" height="256">
+              <span class="arena-cursor__rod" hidden></span>
+              <svg class="nyan-target" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2 15 9 22 9 17 14 19 21 12 17 5 21 7 14 2 9 9 9Z"/>
+                <circle cx="12" cy="12" r="1.6"/>
+              </svg>
+            </div>
+          </div>
+          <div class="console__bottom">
+            <p id="arena-help">Клик, тап, Enter или пробел</p>
+            <div class="cursor-size">
+              <label for="cursor-size">Размер курсора</label>
+              <input id="cursor-size" type="range" min="50" max="175" step="5" value="100" aria-valuetext="100%">
+              <span id="cursor-size-value" aria-hidden="true">100%</span>
+            </div>
+            <div class="click-strength">
+              <label for="click-strength">Сила клика</label>
+              <select id="click-strength">
+                <option value="0">Тихо</option>
+                <option value="1">Мягко</option>
+                <option value="2" selected>Обычно</option>
+                <option value="3">Ярко</option>
+                <option value="4">Шоу</option>
+              </select>
+            </div>
+            <div class="soundbar" aria-label="Пульт звука">
+              <button type="button" class="sound-button" data-sound aria-pressed="false"><span data-sound-label>Звук выключен</span></button>
+            </div>
+          </div>
+        </div>
+        <noscript><p class="notice">Включи JavaScript, чтобы поиграть с курсорами прямо здесь.</p></noscript>
+      </div>
+    </section>
+    <section id="catalog" class="catalog chapter" aria-labelledby="catalog-title">
+      <div class="wrap section-pad">
+        <div class="section-head">
+          <h2 id="catalog-title">Весь<br>зверинец.</h2>
+          <p>68 указателей из PlayPointer. Выбирай любого, и он сразу выйдет на сцену.</p>
+        </div>
+        <div class="catalog__controls">
+          <div class="filters" role="group" aria-label="Категории курсоров">
+            <button type="button" data-filter="all" aria-pressed="true">Все</button>
+            <button type="button" data-filter="cats" aria-pressed="false">Коты</button>
+            <button type="button" data-filter="fun" aria-pressed="false">Мемы и штуки</button>
+            <button type="button" data-filter="classic" aria-pressed="false">Руки</button>
+            <button type="button" data-filter="laser" aria-pressed="false">Лазер</button>
+          </div>
+          <label class="search"><span>Поиск</span><input id="cursor-search" type="search" placeholder="Например, котик" autocomplete="off"></label>
+        </div>
+        <p id="catalog-count" role="status">68 указателей</p>
+        <div id="cursor-grid" aria-label="Каталог указателей"></div>
+        <a class="button button--ink catalog__back" href="#demo">Вернуться на сцену <span aria-hidden="true">↑</span></a>
+      </div>
+    </section>
+    <section class="lineup chapter" aria-labelledby="lineup-title">
+      <div class="wrap section-pad">
+        <h2 id="lineup-title">Кому это<br>сдалось?</h2>
+        <ol class="lineup__list">
+          <li><img src="assets/funny17.webp" width="256" height="256" loading="lazy" alt=""><h3>Инфобизнесу</h3><p>Покажи на тариф. Пусть Фрай первым попросит забрать его деньги.</p></li>
+          <li><img src="assets/funny22.webp" width="256" height="256" loading="lazy" alt=""><h3>Музыкантам</h3><p>Кот играет лапами. Ты говоришь, что это саундчек.</p></li>
+          <li><img src="assets/funny21.webp" width="256" height="256" loading="lazy" alt=""><h3>Инфлюенсерам</h3><p>Оставь радужный след в кадре. Пусть монтажёр сам решает, где тут спецэффекты.</p></li>
+          <li><img src="assets/catLaser.webp" width="256" height="256" loading="lazy" alt=""><h3>Кошатникам</h3><p>Лапка гонится за лазером. Наконец-то у указателя есть мотивация.</p></li>
+          <li><img src="assets/funny10.webp" width="256" height="256" loading="lazy" alt=""><h3>Преподам</h3><p>Покажи ребёнку дроби, коту ипотеку, хомяку его квартальный отчёт.</p></li>
+        </ol>
+      </div>
+    </section>
+    <section id="download" class="download chapter" aria-labelledby="download-title" tabindex="-1">
+      <div class="wrap section-pad">
+        <div class="section-head">
+          <h2 id="download-title">Как<br>установить.</h2>
+          <p>Выбери свою систему. Здесь можно скачать PlayPointer или открыть инструкцию на GitHub.</p>
+        </div>
+        <div class="download__layout">
+          <div class="platforms">
+            <article class="platform" aria-labelledby="install-macos">
+              <h3 id="install-macos">macOS</h3>
+              <p class="platform__intro">Для macOS 13 и новее. Подходит для Mac с Apple Silicon и Intel.</p>
+              <ol class="install-steps">
+                <li>Скачай DMG кнопкой ниже или найди его в разделе <b>Assets</b> на <a href="https://github.com/omiusgm/playpointer/releases/tag/v0.2.9-preview">странице релиза GitHub</a>.</li>
+                <li>Открой DMG и перетащи <b>PlayPointer</b> на значок <b>Applications</b> («Программы»).</li>
+                <li>Запусти PlayPointer из папки «Программы».</li>
+              </ol>
+              <p class="platform__note">Это предварительная сборка без нотарификации Apple. Если macOS заблокирует первый запуск, смотри <a href="https://support.apple.com/ru-ru/102445">инструкцию Apple</a>.</p>
+              <a class="button button--ink" href="https://github.com/omiusgm/playpointer/releases/download/v0.2.9-preview/PlayPointer-0.2.9-macOS-universal-preview.dmg">Скачать DMG для Mac <span aria-hidden="true">↓</span></a>
+            </article>
+            <article class="platform" aria-labelledby="install-windows">
+              <h3 id="install-windows">Windows</h3>
+              <p class="platform__intro">Для Windows 11 x64. Версию 0.2.9 Preview собрали, запуск на Windows ещё предстоит проверить.</p>
+              <ol class="install-steps">
+                <li>Открой <a href="https://github.com/omiusgm/playpointer/releases/tag/v0.2.9-preview">релиз на GitHub</a> и найди внизу раздел <b>Assets</b>.</li>
+                <li>Нажми <b>PlayPointer-0.2.9-win-x64.zip</b>. Кнопка ниже скачивает этот же файл напрямую.</li>
+                <li>Нажми правой кнопкой по архиву и выбери <b>Извлечь всё…</b>. В распакованной папке запусти <code>PlayPointer.exe</code>.</li>
+              </ol>
+              <a class="button button--ink" href="https://github.com/omiusgm/playpointer/releases/download/v0.2.9-preview/PlayPointer-0.2.9-win-x64.zip">Скачать ZIP для Windows <span aria-hidden="true">↓</span></a>
+            </article>
+          </div>
+          <a class="qr" href="https://github.com/omiusgm/playpointer">
+            <img src="assets/github-qr.svg" width="220" height="220" alt="">
+            <span>Наведи камеру.<br>Или открой GitHub <b aria-hidden="true">↗</b></span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="wrap footer__inner">
+      <span>Сайт вайбкодил <b>Владимир Кривошеев</b></span>
+      <nav class="social-links" aria-label="Соцсети Владимира Кривошеева">
+        <a href="https://www.instagram.com/krivosheev.vv/">Instagram</a>
+        <a href="https://t.me/omius">Telegram</a>
+        <a href="https://www.youtube.com/@krivosheev.v">YouTube</a>
+      </nav>
+      <a href="https://github.com/omiusgm/playpointer">Исходники на GitHub <span aria-hidden="true">↗</span></a>
+      <a href="PLAYPOINTER-LICENSE.txt">Лицензия MIT</a>
+    </div>
+  </footer>
+</body>
+</html>

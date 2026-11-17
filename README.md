@@ -1,5 +1,7 @@
 # PlayPointer
 
+[Открыть сайт и демо](https://playpointer-vibecodil.omiusgm.chatgpt.site/) · [Скачать приложение](https://github.com/omiusgm/playpointer/releases/tag/v0.2.9-preview) · [Восстановить проект](docs/RESTORE.md)
+
 PlayPointer — забавные указатели для демонстраций экрана с режимами управления компьютером и рисования. PlayPointer развивает Владимир Кривошеев. Приложение выросло из [TinyHand](https://github.com/nilbuild/tinyhand) Камрана Ахмеда. Авторство и лицензия MIT исходного проекта сохранены в [LICENSE](LICENSE).
 
 ## Как пользоваться

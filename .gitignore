@@ -9,3 +9,6 @@ assets/unused/
 dist-*/
 /windows/bin/
 /windows/obj/
+
+!website/dist/
+!website/dist/**
